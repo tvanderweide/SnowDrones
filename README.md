@@ -15,8 +15,8 @@ conda env list
 conda activate SnowDrones
 ```
 
-**Install Exiftool onto system**
-(One way)
+**Install Exiftool onto system**  
+(One way)  
 change to download/install directory
 ```
 git clone git://github.com/smarnach/pyexiftool.git
