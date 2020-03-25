@@ -1,37 +1,40 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Nov  9 13:21:23 2017
+Created on Mon Mar 16 13:21:23 2020
 @author: Yu-Hsuan Tu
 @author: Thomas Van Der Weide
-This Python Script is developed for Agisoft PhotoScan (current MetaShape) 1.3.4
-Python core is 3.5.2
-22 October 2019 Update: Add tie point error reduction following the USGS guidline
-                        Add the 3D model parameters to user variables
-11 January 2019 Update: Add compatibility of MetaShape 1.5.0
-Update: Add compatibility of PhotoScan 1.4.0
+This Python Script is developed for Agisoft MetaShape 1.5.5
+Python core is 3.8.1
+
 This script runs through all chunks and will do the following:
     1. Align Photos if there's no tie point
     2. Do the standard process if there is tie point
 When aligning photos, users can decide whether using image quality to disable bad photos
-GCP needs to be marked manually
+
 Prerequisites for standard workflow:
     1. Set CRS
     2. Photo alignment
-    3. Marking GCP
+    3. Import GCP
     4. Optimse Camera
     5. Set Region
 The standard workflow includes:
     Build dense point cloud
     Point cloud classification
-    Build model
-    Build DSM
     Build DEM
     Build orthomosaic
     
 All chunks will be applied.
 The DEM will be generated in duplicated chunk: "chunk name"_DEM respectively
 Therefore, please avoid "_DEM" in your chunk name. Otherwise, it will not be processed.
+"""
+"""
+Best Practice to align all images together and then split into chunks.
+To-do: 
+    Merge and then split into chunks
+    Merge Models to include Thermal
+    (https://github.com/agisoft-llc/metashape-scripts/blob/master/src/align_model_to_model.py)
+    
 """
 import os
 import re
@@ -43,10 +46,13 @@ except ImportError:
 
 # Data to Process
 Loc = "LDP"
-ProcessDate = "02-14-2020"
+ProcessDate = "02-04-2020"
 DataType = "RGB"
 
 folder = "/SNOWDATA/SnowDrones-Processing/" + Loc + "/" + ProcessDate + "/" + DataType + "/"
+TargetFN = folder + "GCPwithImageLocations.csv"
+GCP_coordFN = "/SNOWDATA/SnowDrones-Processing/" + Loc + "/" + Loc + "_unprocessed.csv"
+
 saveproj = Loc + "_" +  ProcessDate + "_" + DataType +"_gcpTest"
 saveOrtho = folder + saveproj + ".tif"
 
@@ -107,7 +113,6 @@ Color_balance = False
 #
 #######################################################
 
-wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
 ## get the photo (.tif) list in specified folder
@@ -414,31 +419,42 @@ def UnselectPointMatch(chunk, *band):
 
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
-# Load GCP target locations in images
-def load_markers(chunk, path):
+# Mark GCP target locations in images
+def mark_Images(chunk, GCPpath, path):
+    # Load the GCP Locations
+    try:
+        chunk.loadReference(GCPpath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyz",create_markers=True)
+    except:
+        print("GCP Coordinate File Not Found.")
+    
     file = open(path, "rt")	#input file
     eof = False
+    line = file.readline()
     line = file.readline()
     if not len(line):
         eof = True
         
     while not eof:	
-        sp_line = line.rsplit(",", 3)   #splitting read line by four parts
-        y = float(sp_line[3])			#y- coordinate of the current projection in pixels
-        x = float(sp_line[2])			#x- coordinate of the current projection in pixels
-        path = sp_line[1]				#camera label
-        marker_name = sp_line[0]		#marker label
+        sp_line = line.rsplit(",", 4)   #splitting read line by five parts
+        print(sp_line)
+        y = float(sp_line[4])			#y- coordinate of the current projection in pixels
+        x = float(sp_line[3])			#x- coordinate of the current projection in pixels
+        path = sp_line[2]				#camera label
+        marker_name = sp_line[1]		    #marker label
         
         flag = 0
         for i in range (len(chunk.cameras)):	
             if chunk.cameras[i].label == path:		#searching for the camera
+                print("found camera")
                 for j in range (len(chunk.markers)):	#searching for the marker (comparing with all the marker labels in chunk)
                     if chunk.markers[j].label == marker_name:
+                        print("Found Marker")
                         chunk.markers[j].projections[chunk.cameras[i]] =  PhotoScan.Marker.Projection(PhotoScan.Vector([x,y]), True)		#setting up marker projection of the correct photo)
                         flag = 1
                         break
                 
                 if not flag:
+                    print("Not Flag")
                     marker = chunk.addMarker()
                     marker.label = marker_name
                     marker.projections[chunk.cameras[i]] =  PhotoScan.Marker.Projection(PhotoScan.Vector([x,y]), True)
@@ -452,7 +468,7 @@ def load_markers(chunk, path):
     file.close()	
     print ("Markers import finished.\n")
 
-
+    
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
 # Run the main code
 print("Starting Program...")
@@ -498,21 +514,28 @@ if __name__ == '__main__':
         if chunk.point_cloud is None:
             for i in range (len(chunk.cameras)):	
                 print(chunk.cameras[i].label)
-                
+        
+            # Change Image Projection to UTM11
+            new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
+            # wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")
+            for camera in chunk.cameras:
+                camera.reference.location = new_crs.project(chunk.crs.unproject(camera.reference.location))
+
+            mark_Images(chunk, GCP_coordFN, TargetFN)
             add_altitude(chunk, flightHeightFile)
-            AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
-            ReduceError_RU(chunk)
-            ReduceError_PA(chunk)
+    #         AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
+    #         ReduceError_RU(chunk)
+    #         ReduceError_PA(chunk)
             
-    # Do the rest when there's tie point
-        ReduceError_RE(chunk)
-        StandardWorkflow(doc, chunk, saveOrtho,
-                          Quality=Quality, FilterMode=FilterMode, 
-                          Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
-                          BlendingMode=BlendingMode)
+    # # Do the rest when there's tie point
+    #     ReduceError_RE(chunk)
+    #     StandardWorkflow(doc, chunk, saveOrtho,
+    #                       Quality=Quality, FilterMode=FilterMode, 
+    #                       Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
+    #                       BlendingMode=BlendingMode)
             
-        print("Finished Processing" + psxfile)
-        doc.clear()
+    #     print("Finished Processing" + psxfile)
+    #     doc.clear()
         
         # #Close the App
         # app = PhotoScan.Application()
