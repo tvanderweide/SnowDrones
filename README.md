@@ -1,9 +1,11 @@
 # SnowDrones
 Aerial Imagery Processing
 
-Once you have anaconda installed
-**Use the terminal for the following steps:**
+Once you have anaconda installed and envrionment.yml downloaded  
+**Use the terminal for the following steps:**  
+```
 conda env create -f environment.yml
+```
 
 **Verify that it installed**
 ```
