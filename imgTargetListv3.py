@@ -93,7 +93,7 @@ def iter_folders(mainFold, fieldSite, imgType, Date1):
                 ImgTypeFold = day + "/" + imgType + "/"
                 for imgFolder in sorted(glob.iglob(ImgTypeFold + '*')):
 #                    print(imgFolder)
-                    img_folder = imgFolder.rpartition("\\")[2]
+                    img_folder = imgFolder.rpartition("/")[2]
                     if img_folder == "100MEDIA":
                         for imgs in sorted(glob.iglob(imgFolder + '/*')):
                             img_list.append(imgs)
@@ -101,6 +101,7 @@ def iter_folders(mainFold, fieldSite, imgType, Date1):
                 csvFN = input_folder + 'LDP_unprocessed_header.csv'
                 GCP_array = read_RTK(csvFN)
                     
+                print(img_list)
                 # Get image metadata
                 metadata = get_metadata(img_list)
                 # Dictionary that lists the images whose footprint covers the GCP
@@ -146,14 +147,11 @@ def get_imgTargetList(GCP_array, md):
 
 ####--------------------------------------------------------------------------------------------------------------------####
 def get_metadata(imgList):
-    # Need to manually define where the EXIFTOOL is located!!!
-    Location = "/SNOWDATA/SnowDrones-Processing/Image-Exiftool-11.91/exiftool"
-    
     if type(imgList)==list:
-        with exiftool.ExifTool(Location) as et:
+        with exiftool.ExifTool() as et:
             metadata = et.get_metadata_batch(imgList)
     else:
-        with exiftool.ExifTool(Location) as et:
+        with exiftool.ExifTool() as et:
             metadata = et.get_metadata(imgList)
 
     return metadata
@@ -216,8 +214,10 @@ print("Finished saving feather")
 
 
 
+# fn = "/SNOWDATA/SnowDrones-Processing/LDP/02-04-2020/RGB/100MEDIA/DJI_0410.JPG"
 
-
+# with exiftool.ExifTool() as et:
+#             metadata = et.get_metadata(fn)
 
 
 
