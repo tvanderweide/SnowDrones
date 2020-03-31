@@ -10,7 +10,7 @@ Save point clicked to DF
 #########------------------------------------------pyQT Zoom -------------------------------------------------------########
 #####--------------------------------------------------------------------------------------------------------------------####
 #https://stackoverflow.com/questions/50379530/how-to-get-the-coordinate-of-the-loaded-image-and-not-the-one-from-the-display
-from PyQt5.QtWidgets import QWidget, QApplication, QSlider, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox
+from PyQt5.QtWidgets import QWidget, QApplication, QSlider, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QGraphicsPixmapItem
 from PyQt5.QtGui import QPainter, QColor
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtOpenGL import *
@@ -32,7 +32,12 @@ class View(QGraphicsView):
         self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
         self.setScene(self.scene)
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-        self.points = QtGui.QPolygon()
+#        self.points = QtGui.QPolygon()
+        
+        self.imagePanel = ImageDrawPanel(scene = self.scene)
+        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        self.scene.addItem(self.imagePanel)
+
 
     def Hand_drag(self):
             self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
@@ -53,7 +58,8 @@ class View(QGraphicsView):
             i = i -1
         else:
             i = 0
-        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+#        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
     
     def show_next(self):
         global i
@@ -62,8 +68,8 @@ class View(QGraphicsView):
             i = i + 1
         else:
             i = i
-        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-        self.update()
+#        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
         
         
     def wheelEvent(self, event):
@@ -93,7 +99,28 @@ class View(QGraphicsView):
         self.translate(delta.x(), delta.y())
         
         
+class ImageDrawPanel(QGraphicsPixmapItem):
+    def __init__(self, pixmap=None, parent=View, scene=None):
+        super(ImageDrawPanel, self).__init__()
+        self.x, self.y = -1, -1
+        self.pen = QPen(Qt.black)
+        self.pen.setWidth(1)
+
+    def paint(self, painter, option, widget=None):
+        painter.drawPixmap(0, 0, self.pixmap())                
+        painter.setPen(self.pen)
+    
+        if self.x >= 0 and self.y >= 0:
+            painter.drawPoint(self.x, self.y)
+
+    def mousePressEvent (self, event):
+        print('mouse pressed')
+        self.x=event.pos().x()
+        self.y=event.pos().y()            
+        self.update()
         
+
+
 class Window(QWidget):    
     def __init__(self):
         super(Window, self).__init__()
@@ -212,7 +239,7 @@ class Window(QWidget):
 ######-------------------------------MAIN-----------------------------------------######
 if __name__== "__main__":
     # Enter Field Site, Camera type, and Date
-    mainFold = "/SNOWDATA/SnowDrones-Processing/"
+    mainFold = "F:/SnowDrones/"
     fieldSiteList = ["LDP","BogusRidge","BullTrout","Headwall","PoleCat","TableRock","Treeline"]
     fieldSite = fieldSiteList[0]
     imgTypeList = ["RGB","Multispec","Thermal"]
