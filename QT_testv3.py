@@ -5,52 +5,79 @@ Reorders widget buttons
 adds Enter/Skip buttons
 mouse wheel zoom
 Save point clicked to DF
+
+4/3/2020 Update
+Added pixel color change when selecting pixel to save
 """
 #####--------------------------------------------------------------------------------------------------------------------####
 #########------------------------------------------pyQT Zoom -------------------------------------------------------########
 #####--------------------------------------------------------------------------------------------------------------------####
 #https://stackoverflow.com/questions/50379530/how-to-get-the-coordinate-of-the-loaded-image-and-not-the-one-from-the-display
 from PyQt5.QtWidgets import QWidget, QApplication, QSlider, QGraphicsView, QGraphicsScene, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QMessageBox, QGraphicsPixmapItem
-from PyQt5.QtGui import QPainter, QColor
+from PyQt5.QtGui import QPainter, QColor, QImage
 from PyQt5 import QtCore, QtWidgets, QtGui
 from PyQt5.QtOpenGL import *
 from PyQt5.QtCore import *
-#from PyQt5.QtCore import pyqtSignal
 from PyQt5.QtGui import *
-import sys
 import pandas as pd
 import os.path
+from skimage import io
 
 class View(QGraphicsView):
     photo_clicked = QtCore.pyqtSignal(QtCore.QPoint)
-
+    
     def __init__(self, parent):
         super(View, self).__init__()
         self.scene = QtWidgets.QGraphicsScene(self)
-        self.photo = QtWidgets.QGraphicsPixmapItem()
-        self.scene.addItem(self.photo)
-        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        
+        img = imgTarget_df['Img_Name'][i]
+        self.image = io.imread(img)
+        h,w,z = self.image.shape
+        self.photo = QImage(self.image,self.image.shape[1],self.image.shape[0],self.image.strides[0],QImage.Format_RGB888)
+        
+        self.pixmap = QtGui.QPixmap()
+        self.pixmap = self.pixmap.fromImage(self.photo)
+        
+        self.imgLabel = QtWidgets.QGraphicsPixmapItem()
+        self.imgLabel.setPixmap(self.pixmap)
+        
+        self.scene.addItem(self.imgLabel)
         self.setScene(self.scene)
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-#        self.points = QtGui.QPolygon()
         
-        self.imagePanel = ImageDrawPanel(scene = self.scene)
-        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-        self.scene.addItem(self.imagePanel)
-
-
+        
     def Hand_drag(self):
             self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
-
+            
     def pixel_pointer(self):
             self.setDragMode(QtWidgets.QGraphicsView.NoDrag)
-
+            
     def mousePressEvent(self, event):
-        if self.photo.isUnderMouse():
-            p = self.photo.mapToItem(self.photo, self.mapToScene(event.pos()))
-            self.center = self.photo_clicked.emit(p.toPoint())
+        if self.imgLabel.isUnderMouse():
+            p = self.imgLabel.mapToItem(self.imgLabel, self.mapToScene(event.pos()))
+            # Remove rounding errors
+            p.setX(int(p.x()))
+            p.setY(int(p.y()))
+            self.pt = p.toPoint()
+            self.center = self.photo_clicked.emit(self.pt)
+            if self.parent().btn_pix_info1.isChecked():
+                self.fillImage()
+            else:
+                pass
         super(View, self).mousePressEvent(event)
         
+    
+    def fillImage(self):
+        i = self.pt.x()
+        j = self.pt.y()
+        print("Fill Img at %d,%d" %(i,j))
+        self.photo = QImage(self.image,self.image.shape[1],self.image.shape[0],self.image.strides[0],QImage.Format_RGB888)
+        self.photo.setPixelColor(i,j, QtGui.QColor(0, 0, 0))
+        # reload image to get rid of previous point clicked
+        self.pixmap = self.pixmap.fromImage(self.photo)
+        self.imgLabel.setPixmap(self.pixmap)
+#        self.repaint()
+        self.update()
         
     def show_prev(self):
         global i
@@ -58,8 +85,10 @@ class View(QGraphicsView):
             i = i -1
         else:
             i = 0
-#        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        img = imgTarget_df['Img_Name'][i]
+        self.image = io.imread(img, key=0)
+        self.imgLabel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+#        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
     
     def show_next(self):
         global i
@@ -68,9 +97,11 @@ class View(QGraphicsView):
             i = i + 1
         else:
             i = i
-#        self.photo.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-        
+        img = imgTarget_df['Img_Name'][i]
+        self.image = io.imread(img, key=0)
+        self.imgLabel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+#        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+
         
     def wheelEvent(self, event):
         # Zoom Factor
@@ -97,27 +128,6 @@ class View(QGraphicsView):
         # Move scene to old position
         delta = newPos - oldPos
         self.translate(delta.x(), delta.y())
-        
-        
-class ImageDrawPanel(QGraphicsPixmapItem):
-    def __init__(self, pixmap=None, parent=View, scene=None):
-        super(ImageDrawPanel, self).__init__()
-        self.x, self.y = -1, -1
-        self.pen = QPen(Qt.black)
-        self.pen.setWidth(1)
-
-    def paint(self, painter, option, widget=None):
-        painter.drawPixmap(0, 0, self.pixmap())                
-        painter.setPen(self.pen)
-    
-        if self.x >= 0 and self.y >= 0:
-            painter.drawPoint(self.x, self.y)
-
-    def mousePressEvent (self, event):
-        print('mouse pressed')
-        self.x=event.pos().x()
-        self.y=event.pos().y()            
-        self.update()
         
 
 
