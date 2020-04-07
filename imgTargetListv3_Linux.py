@@ -83,7 +83,8 @@ def iter_folders(mainFold, fieldSite, imgType, Date1):
     img_list = []
     #Iterate through all the folders
     for day in sorted(glob.iglob(input_folder + '*')):
-        day_folder = day.rpartition("\\")[2]
+        day = day.replace('\\', '/')
+        day_folder = day.rpartition("/")[2]
 #        print(day)
         if day_folder[0] != "L":
             date = datetime.strptime(day_folder, '%m-%d-%Y').date()
@@ -93,14 +94,16 @@ def iter_folders(mainFold, fieldSite, imgType, Date1):
                 ImgTypeFold = day + "/" + imgType + "/"
                 for imgFolder in sorted(glob.iglob(ImgTypeFold + '*')):
 #                    print(imgFolder)
-                    img_folder = imgFolder.rpartition("\\")[2]
+                    imgFolder = imgFolder.replace('\\', '/')
+                    img_folder = imgFolder.rpartition("/")[2]
                     if img_folder == "100MEDIA":
                         for imgs in sorted(glob.iglob(imgFolder + '/*')):
+                            imgs = imgs.replace('\\', '/')
                             img_list.append(imgs)
 
-                csvFN = 'F:/SnowDrones/LDP/LDP_unprocessed_header.csv'
+                csvFN = input_folder + 'LDP_unprocessed_header.csv'
                 GCP_array = read_RTK(csvFN)
-                    
+                
                 # Get image metadata
                 metadata = get_metadata(img_list)
                 # Dictionary that lists the images whose footprint covers the GCP
@@ -146,13 +149,15 @@ def get_imgTargetList(GCP_array, md):
 
 ####--------------------------------------------------------------------------------------------------------------------####
 def get_metadata(imgList):
+    print("Getting Metadata...")
     if type(imgList)==list:
-        with exiftool.ExifTool("C:/Users/Endure1/Documents/SnowDrones/exiftool-11.91/exiftool(-k).exe") as et:
+        with exiftool.ExifTool() as et:
             metadata = et.get_metadata_batch(imgList)
     else:
-        with exiftool.ExifTool("C:/Users/Endure1/Documents/SnowDrones/exiftool-11.91/exiftool(-k).exe") as et:
+        with exiftool.ExifTool() as et:
             metadata = et.get_metadata(imgList)
-
+            
+    print("Retrived Metadata...")
     return metadata
 
 
@@ -178,7 +183,7 @@ fieldSiteList = ["LDP","BogusRidge","BullTrout","Headwall","PoleCat","TableRock"
 fieldSite = fieldSiteList[0]
 imgTypeList = ["RGB","Multispec","Thermal"]
 imgType = imgTypeList[0]
-mainFold = "F:/SnowDrones/"
+mainFold = "/SNOWDATA/SnowDrones-Processing/"
 Date1 = "02-04-2020"
 datetime_obj = datetime.strptime(Date1, '%m-%d-%Y').date()
     
@@ -203,17 +208,6 @@ imgTargets_df.to_feather(imgTargets_outfile)
 
 
 print("Finished saving feather")
-
-
-
-
-
-
-
-
-
-
-
 
 
 
