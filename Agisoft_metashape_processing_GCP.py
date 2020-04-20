@@ -44,75 +44,6 @@ try:
 except ImportError:
     import PhotoScan
 
-# Data to Process
-Loc = "LDP"
-ProcessDate = "02-04-2020"
-DataType = "RGB"
-
-folder = "/SNOWDATA/SnowDrones-Processing/" + Loc + "/" + ProcessDate + "/" + DataType + "/"
-TargetFN = folder + "GCPwithImageLocations.csv"
-GCP_coordFN = "/SNOWDATA/SnowDrones-Processing/" + Loc + "/" + Loc + "_unprocessed.csv"
-
-saveproj = Loc + "_" +  ProcessDate + "_" + DataType +"_gcpTest"
-saveOrtho = folder + saveproj + ".tif"
-
-# Clear the Console
-PhotoScan.app.console.clear()
-# construct the document class
-doc = PhotoScan.app.document
-
-## Open existing project or save project
-psxfile = os.path.join(folder, saveproj + ".psx")
-try:
-    doc.open( psxfile, read_only=False, ignore_lock=True )
-except:
-    doc.save( psxfile )
-
-
-#######################################################
-# User variables
-#
-# Variables for image quality filter
-# QualityFilter: True, False
-# QualityCriteria: float number range from 0 to 1 (default 0.5)
-QualityFilter = False
-QualityCriteria = 0.5
-#
-# Variables for photo alignment
-# Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
-Accuracy = PhotoScan.Accuracy.LowestAccuracy
-Key_Limit = 60000
-Tie_Limit = 0
-#
-# Variables for building dense cloud
-# Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
-# Filter: AggressiveFiltering, ModerateFiltering, MildFiltering, NoFiltering
-Quality = PhotoScan.Quality.LowestQuality
-FilterMode = PhotoScan.FilterMode.MildFiltering
-#
-# Variables for dense cloud ground point classification
-# Maximum distance is usually twice of image resolution
-# Which will be calculated later
-Max_Angle = 13
-Cell_Size = 10
-#
-# Variable for building 3D mesh
-# Surface: Arbitrary, HeightField
-# SurfaceSource: PointCloudData, DenseCloudData, DepthMapsData
-Surface = PhotoScan.SurfaceType.Arbitrary
-SurfaceSource = PhotoScan.DataSource.DepthMapsData
-#
-# Variable for building orthomosaic
-# Since 1.4.0, users can choose performing color correction (vignetting) and balance separately.
-# Blending: AverageBlending, MosaicBlending, MinBlending, MaxBlending, DisabledBlending
-# Color_correction: True, False
-# Color_balance: True, False
-BlendingMode = PhotoScan.BlendingMode.MosaicBlending
-Color_correction = False
-Color_balance = False
-#
-#######################################################
-
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
 ## get the photo (.tif) list in specified folder
@@ -134,6 +65,13 @@ def AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCrit
         for band in [band for camera in chunk.cameras for band in camera.planes]:
             if float(band.meta['Image/Quality']) < QualityCriteria:
                 band.enabled = False
+    
+    originalImgList = list()
+    for camera in chunk.cameras:
+      if not camera.transform:
+            originalImgList.append(camera)
+    originalCount = len(originalImgList)
+    
     chunk.matchPhotos(accuracy=Accuracy, 
                       generic_preselection=True, 
                       reference_preselection=True, 
@@ -141,10 +79,41 @@ def AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCrit
                       keypoint_limit=Key_Limit, 
                       tiepoint_limit=Tie_Limit)
     chunk.alignCameras()
-    chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
-                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
-                          fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
-                          adaptive_fitting=False, tiepoint_covariance=False)
+    
+    # Realign non-aligned images
+    realign_list = list()
+    for camera in chunk.cameras:
+          if not camera.transform:
+                realign_list.append(camera)
+    chunk.alignCameras(cameras = realign_list)
+    
+    realign_list = list()
+    for camera in chunk.cameras:
+          if not camera.transform:
+                realign_list.append(camera)
+    chunk.alignCameras(cameras = realign_list)
+    
+    realign_list = list()
+    for camera in chunk.cameras:
+          if not camera.transform:
+                realign_list.append(camera)
+    
+    # if more than 40% of images were aligned
+    if len(realign_list) <= originalCount * 0.4:
+        successAlignment = True
+        chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
+                              fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
+                              fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
+                              adaptive_fitting=False, tiepoint_covariance=False)
+    else:
+        successAlignment = False
+    
+    #Remove unused variables
+    originalImgList = None
+    originalCount = None
+    
+    return successAlignment
+    
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def BuildDenseCloud(chunk, Quality, FilterMode):
@@ -221,9 +190,6 @@ def BuildMosaic(chunk, BlendingMode, save_ortho):
     doc.save()
     
 
-
-
-
 #####----------------------------------------------------------------------------------------------------------------------#######
 def add_altitude(chunk, flightHeightFile):
     """
@@ -280,6 +246,8 @@ def StandardWorkflow(doc, chunk, saveOrtho, **kwargs):
         doc.save()
         
         # Export Orthomosaic
+        if os.path.exists(saveOrtho):
+            os.remove(saveOrtho)
         chunk.exportOrthomosaic(saveOrtho, image_format = PhotoScan.ImageFormatTIFF)
         
     return
@@ -292,6 +260,10 @@ def GetResolution(chunk):
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def ReduceError_RU(chunk, init_threshold=10):
+    minRemainingPercent = 50 #percentage of left points
+    points = chunk.point_cloud.points
+    minRemainingPoints = int(len(points) * (minRemainingPercent/100))
+    
     # This is used to reduce error based on reconstruction uncertainty
     tie_points = chunk.point_cloud
     fltr = PhotoScan.PointCloud.Filter()
@@ -300,13 +272,14 @@ def ReduceError_RU(chunk, init_threshold=10):
     while fltr.max_value > 10:
         fltr.selectPoints(threshold)
         nselected = len([p for p in tie_points.points if p.selected])
-        if nselected >= len(tie_points.points) / 2 and threshold <= 50:
+#        if nselected >= len(tie_points.points) / 2 and threshold <= 50:
+        if nselected >= minRemainingPoints and threshold <= 50:
             fltr.resetSelection()
             threshold += 1
             continue
         UnselectPointMatch(chunk)
         nselected = len([p for p in tie_points.points if p.selected])
-        if nselected == 0:
+        if nselected <= 5:
             break
         print('Delete {} tie point(s)'.format(nselected))
         tie_points.removeSelectedPoints()
@@ -465,78 +438,215 @@ def mark_Images(chunk, GCPpath, path):
             eof = True
             break # EOF
         
-    file.close()	
-    print ("Markers import finished.\n")
+    file.close()
 
     
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
 # Run the main code
 print("Starting Program...")
+#######################################################
+# User variables
+#
+# Variables for image quality filter
+# QualityFilter: True, False
+# QualityCriteria: float number range from 0 to 1 (default 0.5)
+QualityFilter = False
+QualityCriteria = 0.5
+#
+# Variables for photo alignment
+# Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
+Accuracy = PhotoScan.Accuracy.LowestAccuracy
+Key_Limit = 60000
+Tie_Limit = 0
+#
+# Variables for building dense cloud
+# Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
+# Filter: AggressiveFiltering, ModerateFiltering, MildFiltering, NoFiltering
+Quality = PhotoScan.Quality.LowestQuality
+FilterMode = PhotoScan.FilterMode.MildFiltering
+#
+# Variables for dense cloud ground point classification
+# Maximum distance is usually twice of image resolution
+# Which will be calculated later
+Max_Angle = 13
+Cell_Size = 10
+#
+# Variable for building 3D mesh
+# Surface: Arbitrary, HeightField
+# SurfaceSource: PointCloudData, DenseCloudData, DepthMapsData
+Surface = PhotoScan.SurfaceType.Arbitrary
+SurfaceSource = PhotoScan.DataSource.DepthMapsData
+#
+# Variable for building orthomosaic
+# Since 1.4.0, users can choose performing color correction (vignetting) and balance separately.
+# Blending: AverageBlending, MosaicBlending, MinBlending, MaxBlending, DisabledBlending
+# Color_correction: True, False
+# Color_balance: True, False
+BlendingMode = PhotoScan.BlendingMode.MosaicBlending
+Color_correction = False
+Color_balance = False
+#
+#######################################################
 
 if __name__ == '__main__':
-    chunk = doc.chunk
-                
-    for fold in sorted(glob.iglob(folder + '10*/')):
-        print(fold)
-        tempFold = fold[:-1]
-        chunkName = tempFold.rpartition("/")[2]
+    # Define Folders to Process
+    mainFold = "/SNOWDATA/SnowDrones-Processing/"
+    Loc = "LDP"
+    locFold = mainFold + Loc + "/"
     
-        img_Path = fold
-        imgType = ".JPG"
-        flightHeightFile = img_Path + "FlightHeight.txt"
-                
-        ### Photo List ###
-        photoList = []
-        getPhotoList(img_Path, photoList, imgType)
-        # Add photos to list
-        chunk = doc.addChunk()
-        chunk.addPhotos(photoList)
-        chunk.label = chunkName
-        
-    chunk_list = doc.chunks
-    print(chunk_list)
+    # Read in the GCP RTK Target GPS coordinates
+    GCP_coordFN = locFold + Loc + "_unprocessed.csv"
             
+#    ProcessDate = ["02-04-2020"]
+    AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+    AllDates = AllDates[4:5]
+    DataType = ["RGB", "Thermal"]
     
-    # Initialising listing chunks
-    for chunk in list(doc.chunks):
-        # Remove empty chunks
-        if not len(chunk.cameras):
-            doc.remove(chunk)
+    # Iter through all folders
+    for ProcessDate in AllDates:
+        print(ProcessDate)
+        dateFolder =  locFold + ProcessDate + "/"
+        #Where to save the metashape Project file
+        saveprojName = Loc + "_" +  ProcessDate +"_LowestTest.psx"
+        psxfile = dateFolder + saveprojName
+        
+        # Clear the Console
+        PhotoScan.app.console.clear()
+        # construct the document class
+        doc = PhotoScan.app.document
+        ## Open existing project or save project
+        openDoc = 0
+        try:
+            doc.open( psxfile, read_only=False, ignore_lock=True )
+            openDoc = 1
+        except:
+            doc.save( psxfile )
+        
+        for imgType in DataType:
+            typeFolder =  locFold + ProcessDate + "/" + imgType + "/"
+            if os.path.isdir(typeFolder):               
+                #Define the subfolder names
+                if imgType == "RGB":
+                    var = '10*/'
+                    imgExt = ".JPG"
+                elif imgType == "Thermal":
+                    var = '20*/'
+                    imgExt = ".tiff"
+                else:
+                    print("imgType is non-valid for folder iteration")
+                chunk = doc.addChunk()
+                chunkName = imgType
+                
+                # #If the document was opened and if the chunk already exists then skip the creation
+                # chunk_list = doc.chunks
+                # if all(openDoc == 1 and (chunkName in chunkList)):
+                #     print("TRUE")
+                # else:
+                #     print("FALSE")
+                
+                chunk.label = chunkName
+                for fold in sorted(glob.iglob(typeFolder + var)):
+                    fold = fold.replace('\\', '/')
+                    print(fold)
+                    
+                    ### Photo List ###
+                    photoList = []
+                    getPhotoList(fold, photoList, imgExt)
+                    # Add photos to list
+                    if photoList:
+                        chunk.addPhotos(photoList)
+                        doc.save()
+                    else:
+                        print("Photo list is empty.")
             
-    chunk_list = doc.chunks
-    print(chunk_list)
-    
-    # Loop for all initial chunks
-    for chunk in chunk_list:
-        doc.chunk = chunk
+                 
+        # Remove any empty chunks
+        for chunk in list(doc.chunks):
+            if not len(chunk.cameras):
+                doc.remove(chunk)
+                
+        chunk_list = doc.chunks
+        print(chunk_list)
+        # Loop for all initial chunks
+        for chunk in chunk_list:
+            doc.chunk = chunk
+            
+            if chunk.label == "RGB":
+                print("Processing RGB")
+            
+                # Align Photo only if it is not done yet
+                if chunk.point_cloud is None:
+                    for i in range (len(chunk.cameras)):	
+                        print(chunk.cameras[i].label)
+                
+                    # Change Image Projection to UTM11
+                    new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
+                    # wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")
+                    for camera in chunk.cameras:
+                        camera.reference.location = new_crs.project(chunk.crs.unproject(camera.reference.location))
+                    
+                    
+                    # Read in the GCP locations on the Images
+                    typeFolder =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
+                    TargetFN = typeFolder + "GCPwithImageLocations.csv"
+                    
+                    filelist = [GCP_coordFN, TargetFN]
+                    if all([os.path.isfile(f) for f in filelist]):
+                        mark_Images(chunk, GCP_coordFN, TargetFN)
+                    else:
+                        print("GCP_coordFN does not exist.")
+                    
+    #                    add_altitude(chunk, flightHeightFile)
+                        
+                        
+                    # Set different quality parameters for alignment of images for Thermal and RGB
+                    if chunk.label == "Thermal":
+                        Accuracy = PhotoScan.Accuracy.HighAccuracy
+                    else:
+                        Accuracy = PhotoScan.Accuracy.LowestAccuracy
+                    
+                    successfulAlignment = AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
+                    ReduceError_RU(chunk)
+                    ReduceError_PA(chunk)
+                # If there already is a point cloud
+                else:
+                    successfulAlignment = True
+                    
+                # Do the rest when there's tie point
+                if successfulAlignment:
+                    # Define the ortho file name and save location
+                    saveOrthoLoc =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
+                    saveOrthoName = Loc + "_" +  ProcessDate + "_" + str(chunk.label) +"_LowestOrtho.tif"
+                    saveOrtho = saveOrthoLoc + saveOrthoName
+        #            print(saveOrtho)
         
-    # Align Photo only if it is not done yet
-        if chunk.point_cloud is None:
-            for i in range (len(chunk.cameras)):	
-                print(chunk.cameras[i].label)
+                    ReduceError_RE(chunk)
+                    
+                    # Set different quality parameters for Thermal and RGB
+                    if chunk.label == "Thermal":
+                        # For building dense cloud
+                        # Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
+                        Quality = PhotoScan.Quality.HighQuality
+                    else:
+                        Quality = PhotoScan.Quality.LowestQuality
+                    
+                    # try:
+                    #     StandardWorkflow(doc, chunk, saveOrtho,
+                    #                    Quality=Quality, FilterMode=FilterMode, 
+                    #                    Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
+                    #                    BlendingMode=BlendingMode)
+                    # except:
+                    #     print("Could not finish processing " + str(chunk.label) + "dataset.")
+                
+        print("Finished Processing" + psxfile)
+        # doc.clear()
         
-            # Change Image Projection to UTM11
-            new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
-            # wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")
-            for camera in chunk.cameras:
-                camera.reference.location = new_crs.project(chunk.crs.unproject(camera.reference.location))
+    # #Close the App
+    # app = PhotoScan.Application()
+    # app.quit()
 
-            mark_Images(chunk, GCP_coordFN, TargetFN)
-            add_altitude(chunk, flightHeightFile)
-    #         AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
-    #         ReduceError_RU(chunk)
-    #         ReduceError_PA(chunk)
-            
-    # # Do the rest when there's tie point
-    #     ReduceError_RE(chunk)
-    #     StandardWorkflow(doc, chunk, saveOrtho,
-    #                       Quality=Quality, FilterMode=FilterMode, 
-    #                       Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
-    #                       BlendingMode=BlendingMode)
-            
-    #     print("Finished Processing" + psxfile)
-    #     doc.clear()
-        
-        # #Close the App
-        # app = PhotoScan.Application()
-        # app.quit()
+
+
+# Split into chunks if needed for highest res
+#    https://www.agisoft.com/forum/index.php?topic=6587.0
+
