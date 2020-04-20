@@ -31,7 +31,7 @@ Therefore, please avoid "_DEM" in your chunk name. Otherwise, it will not be pro
 """
 Best Practice to align all images together and then split into chunks.
 To-do: 
-    Merge and then split into chunks
+    Split into chunks for building point cloud
     Merge Models to include Thermal
     (https://github.com/agisoft-llc/metashape-scripts/blob/master/src/align_model_to_model.py)
     
