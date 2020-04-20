@@ -497,9 +497,9 @@ if __name__ == '__main__':
     # Read in the GCP RTK Target GPS coordinates
     GCP_coordFN = locFold + Loc + "_unprocessed.csv"
             
-#    ProcessDate = ["02-04-2020"]
-    AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
-    AllDates = AllDates[4:5]
+    # AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+    # AllDates = AllDates[4:5]
+    AllDates = ["02-14-2020"]
     DataType = ["RGB", "Thermal"]
     
     # Iter through all folders
@@ -605,9 +605,10 @@ if __name__ == '__main__':
                     else:
                         Accuracy = PhotoScan.Accuracy.LowestAccuracy
                     
-                    successfulAlignment = AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
-                    ReduceError_RU(chunk)
-                    ReduceError_PA(chunk)
+                    # successfulAlignment = AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
+                    successfulAlignment = False
+                    # ReduceError_RU(chunk)
+                    # ReduceError_PA(chunk)
                 # If there already is a point cloud
                 else:
                     successfulAlignment = True
@@ -620,7 +621,7 @@ if __name__ == '__main__':
                     saveOrtho = saveOrthoLoc + saveOrthoName
         #            print(saveOrtho)
         
-                    ReduceError_RE(chunk)
+                    # ReduceError_RE(chunk)
                     
                     # Set different quality parameters for Thermal and RGB
                     if chunk.label == "Thermal":
