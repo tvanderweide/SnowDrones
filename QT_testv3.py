@@ -33,8 +33,14 @@ class View(QGraphicsView):
         self.image = io.imread(img)
         h,w,z = self.image.shape
         self.photo = QImage(self.image,self.image.shape[1],self.image.shape[0],self.image.strides[0],QImage.Format_RGB888)
-        
         self.pixmap = QtGui.QPixmap()
+        x_val = int(imgTarget_df['Img_X'][i])
+        y_val = int(imgTarget_df['Img_Y'][i])
+        if (x_val == 0) or (y_val == 0) or (x_val == 99999) or (y_val == 99999):
+            pass
+        else:
+            self.photo.setPixelColor(x_val, y_val, QtGui.QColor(0, 0, 0))
+        
         self.pixmap = self.pixmap.fromImage(self.photo)
         
         self.imgLabel = QtWidgets.QGraphicsPixmapItem()
