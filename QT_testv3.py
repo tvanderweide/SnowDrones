@@ -5,9 +5,6 @@ Reorders widget buttons
 adds Enter/Skip buttons
 mouse wheel zoom
 Save point clicked to DF
-
-4/3/2020 Update
-Added pixel color change when selecting pixel to save
 """
 #####--------------------------------------------------------------------------------------------------------------------####
 #########------------------------------------------pyQT Zoom -------------------------------------------------------########
@@ -27,9 +24,11 @@ class View(QGraphicsView):
     photo_clicked = QtCore.pyqtSignal(QtCore.QPoint)
     
     def __init__(self, parent):
-        super(View, self).__init__()
-        self.scene = QtWidgets.QGraphicsScene(self)
-        
+        super(View, self).__init__()       
+        self.new_Img()
+                
+    def new_Img(self):
+        global i
         img = imgTarget_df['Img_Name'][i]
         self.image = io.imread(img)
         h,w,z = self.image.shape
@@ -41,9 +40,17 @@ class View(QGraphicsView):
         self.imgLabel = QtWidgets.QGraphicsPixmapItem()
         self.imgLabel.setPixmap(self.pixmap)
         
+        self.begin = QtCore.QPoint()
+        self.end = QtCore.QPoint()
+        self.points = []
+        
+        self.scene = QtWidgets.QGraphicsScene(self)
         self.scene.addItem(self.imgLabel)
         self.setScene(self.scene)
         self.setDragMode(QtWidgets.QGraphicsView.ScrollHandDrag)
+        
+        self.resetTransform()
+        self.scale(0.3, 0.3)
         
         
     def Hand_drag(self):
@@ -59,24 +66,23 @@ class View(QGraphicsView):
             p.setX(int(p.x()))
             p.setY(int(p.y()))
             self.pt = p.toPoint()
-            self.center = self.photo_clicked.emit(self.pt)
+            # self.center = self.photo_clicked.emit(self.pt)
             if self.parent().btn_pix_info1.isChecked():
+                self.center = self.photo_clicked.emit(self.pt)
                 self.fillImage()
             else:
                 pass
         super(View, self).mousePressEvent(event)
-        
     
     def fillImage(self):
         i = self.pt.x()
         j = self.pt.y()
         print("Fill Img at %d,%d" %(i,j))
+        # reload image to get rid of previous point clicked
         self.photo = QImage(self.image,self.image.shape[1],self.image.shape[0],self.image.strides[0],QImage.Format_RGB888)
         self.photo.setPixelColor(i,j, QtGui.QColor(0, 0, 0))
-        # reload image to get rid of previous point clicked
         self.pixmap = self.pixmap.fromImage(self.photo)
         self.imgLabel.setPixmap(self.pixmap)
-#        self.repaint()
         self.update()
         
     def show_prev(self):
@@ -85,10 +91,7 @@ class View(QGraphicsView):
             i = i -1
         else:
             i = 0
-        img = imgTarget_df['Img_Name'][i]
-        self.image = io.imread(img, key=0)
-        self.imgLabel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-#        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        self.new_Img()
     
     def show_next(self):
         global i
@@ -97,10 +100,7 @@ class View(QGraphicsView):
             i = i + 1
         else:
             i = i
-        img = imgTarget_df['Img_Name'][i]
-        self.image = io.imread(img, key=0)
-        self.imgLabel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
-#        self.imagePanel.setPixmap(QtGui.QPixmap(imgTarget_df['Img_Name'][i]))
+        self.new_Img()
 
         
     def wheelEvent(self, event):
@@ -141,7 +141,7 @@ class Window(QWidget):
         self.btn_hand_drag.clicked.connect(self.view.Hand_drag)
         self.btn_hand_drag.clicked.connect(self.btn_hand_drag_uncheck_others)
 
-        self.btn_pix_info1 = QtWidgets.QCheckBox("Point 1", self)
+        self.btn_pix_info1 = QtWidgets.QCheckBox("Select Point", self)
         self.btn_pix_info1.clicked.connect(self.view.pixel_pointer)
         self.btn_pix_info1.clicked.connect(self.btn_pix_info1_drag_uncheck_other)
         self.editPixInfo1 = QtWidgets.QLineEdit(self)
@@ -151,10 +151,14 @@ class Window(QWidget):
         self.prev.clicked.connect(self.view.show_prev)
         self.prev.clicked.connect(self.set_interval)
         self.prev.clicked.connect(self.set_gcpLabel)
+        self.prev.clicked.connect(self.view.Hand_drag)
+        self.prev.clicked.connect(self.btn_hand_drag_uncheck_others)
         self.next = QtWidgets.QPushButton("Next", self)
         self.next.clicked.connect(self.view.show_next)
         self.next.clicked.connect(self.set_interval)
         self.next.clicked.connect(self.set_gcpLabel)
+        self.next.clicked.connect(self.btn_hand_drag_uncheck_others)
+        self.next.clicked.connect(self.view.Hand_drag)
         
         self.intervals = QtWidgets.QLabel("Image Number 0", self)
         self.gcpLabel = QtWidgets.QLabel("gcp", self)
@@ -190,11 +194,6 @@ class Window(QWidget):
         self.showMaximized()
         
         
-    def zoom(self, value):
-        val = value / 100
-        self.view.resetTransform()
-        self.view.scale(val, val)
-
     def btn_hand_drag_uncheck_others(self):
         self.btn_pix_info1.setChecked(False)
 
@@ -212,8 +211,10 @@ class Window(QWidget):
     def set_interval(self):
         global i
         global img_max
+        x_valtemp = int(imgTarget_df['Img_X'][i])
+        y_valtemp = int(imgTarget_df['Img_Y'][i])
         self.intervals.setText('Image Number %d of %d' % (i, img_max))
-        self.editPixInfo1.setText('%d, %d' % (0, 0))
+        self.editPixInfo1.setText('%d, %d' % (x_valtemp, y_valtemp))
         
     def set_gcpLabel(self):
         global i
@@ -234,7 +235,6 @@ class Window(QWidget):
         else:
             self.next.click()
             self.btn_hand_drag.click()
-            self.zoom(28)
             
     def set_TargetSkip(self):
         global i
@@ -242,7 +242,6 @@ class Window(QWidget):
         imgTarget_df.loc[imgTarget_df['Img_Name']==imgTarget_df['Img_Name'][i], ['Img_Y']] = 99999
         self.next.click()
         self.btn_hand_drag.click()
-        self.zoom(28)
         
 
 
