@@ -43,6 +43,45 @@ try:
     import Metashape as PhotoScan
 except ImportError:
     import PhotoScan
+# import split_in_chunks_python
+import pandas as pd
+import math
+
+
+#####-----------------------------------------------------------------------------------------------------------------------------------#######
+# def splitInChunks(doc, chunk):
+#     # Call the split in chunks script
+#     #######----------------------- List of Parameter options --------------------------------------------######
+#     FILTERING = {"3": PhotoScan.NoFiltering,
+#                  "0": PhotoScan.MildFiltering,
+#                  "1": PhotoScan.ModerateFiltering,
+#                  "2": PhotoScan.AggressiveFiltering}
+    
+#     MESH = {"Arbitrary": PhotoScan.SurfaceType.Arbitrary,
+#             "Height Field": PhotoScan.SurfaceType.HeightField}
+    
+#     DENSE = {"Ultra":  1,
+#              "High":   2,
+#              "Medium": 4,
+#              "Low":    8,
+#              "Lowest": 16}
+    
+#     # Options
+#     # Overlap percentage
+#     overLap = 15
+#     # How many chunks (grid layout)
+#     gridX = 2
+#     gridY = 2
+#     # What processing to do
+#     buildDenseCloud = 0
+#     buildMesh = 0
+#     mergeBack = 1
+#     deleteChunks = 0
+#     # Set Parameters
+#     quality = DENSE["Low"]
+#     mesh_mode = MESH["Height Field"]
+#     filtering = FILTERING["1"]
+#     split_in_chunks_python.splitChunks(doc, chunk, overLap, gridX, gridY, buildDenseCloud, buildMesh, mergeBack, deleteChunks, quality, mesh_mode, filtering)
 
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
@@ -57,24 +96,135 @@ def getPhotoList(root_path, photoList, img_type):
                 photoList.append(cur_path)
     return
 
+
+#####-----------------------------------------------------------------------------------------------------------------------------------#######
+# Mark GCP target locations in images
+def mark_Images(chunk, GCPpath, path):
+    # Load the GCP Locations
+    try:
+        chunk.importReference(GCPpath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyz",create_markers=True, crs=PhotoScan.CoordinateSystem("EPSG::32611"))
+    #, crs=PhotoScan.CoordinateSystem("EPSG::32611") 
+    #, threshold = 3
+    except:
+        print("GCP Coordinate File Not Found.")
+    
+    file = open(path, "rt")	#input file
+    eof = False
+    line = file.readline()
+    line = file.readline()
+    if not len(line):
+        eof = True
+    
+    while not eof:	
+        sp_line = line.rsplit(",", 4)   #splitting read line by five parts
+        print(sp_line)
+        y = float(sp_line[4])			#y- coordinate of the current projection in pixels
+        x = float(sp_line[3])			#x- coordinate of the current projection in pixels
+        path = sp_line[2]				#camera label
+        marker_name = sp_line[1]		#marker label
+        
+        flag = 0
+        for i in range (len(chunk.cameras)):	
+            if chunk.cameras[i].label == path:		#searching for the camera
+                print("found camera")
+                for j in range (len(chunk.markers)):	#searching for the marker (comparing with all the marker labels in chunk)
+                    if chunk.markers[j].label == marker_name:
+                        print("Found Marker")
+                        chunk.markers[j].projections[chunk.cameras[i]] =  PhotoScan.Marker.Projection(PhotoScan.Vector([x,y]), True)		#setting up marker projection of the correct photo)
+                        flag = 1
+                        break
+                
+                if not flag:
+                    print("Not Flag")
+                    marker = chunk.addMarker()
+                    marker.label = marker_name
+                    marker.projections[chunk.cameras[i]] =  PhotoScan.Marker.Projection(PhotoScan.Vector([x,y]), True)
+                break
+        
+        line = file.readline()		#reading the line from input file
+        if not len(line):
+            eof = True
+            break # EOF
+    
+    ## Disable GCP-t and TCPs
+    for marker in chunk.markers:
+        # Set the Marker Accuracy
+        marker.reference.accuracy = PhotoScan.Vector([3,3,3])
+        
+        if marker.label == 'Hhh':
+            marker.reference.enabled = False
+        elif marker.label == '100':
+              marker.reference.enabled = False
+        elif marker.label == 'gcp0t':
+              marker.reference.enabled = False
+        elif marker.label == 'gcp0-t':
+              marker.reference.enabled = False
+        elif marker.label == 'gcp1t':
+              marker.reference.enabled = False
+        elif marker.label == 'gcp2t':
+              marker.reference.enabled = False
+        elif marker.label == 'gcp3t':
+              marker.reference.enabled = False
+        elif marker.label == 'gcp4t':
+              marker.reference.enabled = False
+        elif marker.label == 'tcp1':
+              marker.reference.enabled = False
+        elif marker.label == 'tcp2':
+              marker.reference.enabled = False
+        elif marker.label == 'tcp3':
+              marker.reference.enabled = False
+        elif marker.label == 'tcp4':
+              marker.reference.enabled = False
+        else:
+              pass
+        
+    file.close()
+    return
+    
+
 #####----------------------------------------------------------------------------------------------------------------------#######
-def AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria):
+def AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria, new_crs, temp_dict):   
+    # Set the camera and marker projections
+    wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")
+    for camera in chunk.cameras:
+        if camera.reference.location:
+            camera.reference.location = PhotoScan.CoordinateSystem.transform(camera.reference.location, wgs_84, new_crs)
+    
+    # Filter out poor qualtiy Images
     if QualityFilter:
         if chunk.cameras[0].meta['Image/Quality'] is None:
-            chunk.estimateImageQuality()
-        for band in [band for camera in chunk.cameras for band in camera.planes]:
-            if float(band.meta['Image/Quality']) < QualityCriteria:
-                band.enabled = False
+            try:
+                chunk.estimateImageQuality() # Metashape 1.5
+            except:
+                chunk.analyzePhotos() # Metashape 1.6
+        for camera in chunk.cameras:
+            if float(camera.meta["Image/Quality"]) < QualityCriteria:
+                camera.enabled = False
+        ## For Multispectral camera
+        # for band in [band for camera in chunk.cameras for band in camera.planes]:
+        #     if float(band.meta['Image/Quality']) < QualityCriteria:
+        #         band.enabled = False
     
+    # Get list of images in chunk
     originalImgList = list()
     for camera in chunk.cameras:
       if not camera.transform:
             originalImgList.append(camera)
     originalCount = len(originalImgList)
     
-    chunk.matchPhotos(accuracy=Accuracy, 
+    # Metashape 1.5
+    try:
+        chunk.matchPhotos(accuracy=Accuracy, 
+                          generic_preselection=True, 
+                          reference_preselection=False, 
+                          filter_mask=False, 
+                          keypoint_limit=Key_Limit, 
+                          tiepoint_limit=Tie_Limit)
+    # Metashape 1.6
+    except:
+        chunk.matchPhotos(downscale=Accuracy, 
                       generic_preselection=True, 
-                      reference_preselection=True, 
+                      reference_preselection=False, 
                       filter_mask=False, 
                       keypoint_limit=Key_Limit, 
                       tiepoint_limit=Tie_Limit)
@@ -85,22 +235,32 @@ def AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCrit
     for camera in chunk.cameras:
           if not camera.transform:
                 realign_list.append(camera)
+    align0 = originalCount - len(realign_list)
     chunk.alignCameras(cameras = realign_list)
     
     realign_list = list()
     for camera in chunk.cameras:
           if not camera.transform:
                 realign_list.append(camera)
+    align1 = originalCount - len(realign_list)
     chunk.alignCameras(cameras = realign_list)
     
-    realign_list = list()
+    aligned_list = list()
     for camera in chunk.cameras:
-          if not camera.transform:
-                realign_list.append(camera)
+          if camera.transform:
+                aligned_list.append(camera)
+    align2 = len(aligned_list)
     
-    # if more than 40% of images were aligned
-    if len(realign_list) <= originalCount * 0.4:
+    # if more than 60% of images were aligned
+    if align2 >= originalCount * 0.6:
         successAlignment = True
+        # enabling rolling shutter compensation
+        try:
+            for sensor in chunk.sensors:
+                sensor.rolling_shutter = True
+        except:
+            print("Error applying rolling shutter correction")
+        
         chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
                               fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
                               fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
@@ -108,11 +268,18 @@ def AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCrit
     else:
         successAlignment = False
     
+    
+    # Store the Image alignment information
+    temp_dict[chunk.label] = str(align0) + "," + str(align1) + "," + str(align2) + "/" + str(originalCount)
+    
+    
     #Remove unused variables
+    realign_list = None
+    aligned_list = None
     originalImgList = None
     originalCount = None
-    
-    return successAlignment
+    # successAlignment = False
+    return successAlignment, temp_dict
     
 
 #####----------------------------------------------------------------------------------------------------------------------#######
@@ -388,107 +555,103 @@ def UnselectPointMatch(chunk, *band):
     for i in n_proj.keys():
         if n_proj[i] < 3:
             points[i].selected = False
-            
 
-
-#####-----------------------------------------------------------------------------------------------------------------------------------#######
-# Mark GCP target locations in images
-def mark_Images(chunk, GCPpath, path):
-    # Load the GCP Locations
-    try:
-        chunk.loadReference(GCPpath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyz",create_markers=True)
-    except:
-        print("GCP Coordinate File Not Found.")
+#####----------------------------------------------------------------------------------------------------------------------#######
+def markerError(chunk):
+    listaErrores = []
+    for marker in chunk.markers:
+        if marker.reference.enabled:
+           source = chunk.crs.unproject(marker.reference.location) #measured values in geocentric coordinates
+           estim = chunk.transform.matrix.mulp(marker.position) #estimated coordinates in geocentric coordinates
+           local = chunk.crs.localframe(chunk.transform.matrix.mulp(marker.position)) #local LSE coordinates
+           error = local.mulv(estim - source)
+           
+           total = error.norm()      #error punto
+           SumCuadrado = (total) ** 2    #cuadrado del error
+           listaErrores += [SumCuadrado]      #lista de los errores
+       
+    #print(listaErrores)
     
-    file = open(path, "rt")	#input file
-    eof = False
-    line = file.readline()
-    line = file.readline()
-    if not len(line):
-        eof = True
-        
-    while not eof:	
-        sp_line = line.rsplit(",", 4)   #splitting read line by five parts
-        print(sp_line)
-        y = float(sp_line[4])			#y- coordinate of the current projection in pixels
-        x = float(sp_line[3])			#x- coordinate of the current projection in pixels
-        path = sp_line[2]				#camera label
-        marker_name = sp_line[1]		    #marker label
-        
-        flag = 0
-        for i in range (len(chunk.cameras)):	
-            if chunk.cameras[i].label == path:		#searching for the camera
-                print("found camera")
-                for j in range (len(chunk.markers)):	#searching for the marker (comparing with all the marker labels in chunk)
-                    if chunk.markers[j].label == marker_name:
-                        print("Found Marker")
-                        chunk.markers[j].projections[chunk.cameras[i]] =  PhotoScan.Marker.Projection(PhotoScan.Vector([x,y]), True)		#setting up marker projection of the correct photo)
-                        flag = 1
-                        break
-                
-                if not flag:
-                    print("Not Flag")
-                    marker = chunk.addMarker()
-                    marker.label = marker_name
-                    marker.projections[chunk.cameras[i]] =  PhotoScan.Marker.Projection(PhotoScan.Vector([x,y]), True)
-                break
-            
-        line = file.readline()		#reading the line from input file
-        if not len(line):
-            eof = True
-            break # EOF
-        
-    file.close()
-
+    suma = sum(listaErrores)
+    n = len(listaErrores)
+    ErrorTotal = (suma / n) ** 0.5
     
-#####-----------------------------------------------------------------------------------------------------------------------------------#######
-# Run the main code
-print("Starting Program...")
-#######################################################
-# User variables
-#
-# Variables for image quality filter
-# QualityFilter: True, False
-# QualityCriteria: float number range from 0 to 1 (default 0.5)
-QualityFilter = False
-QualityCriteria = 0.5
-#
-# Variables for photo alignment
-# Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
-Accuracy = PhotoScan.Accuracy.LowestAccuracy
-Key_Limit = 60000
-Tie_Limit = 0
-#
-# Variables for building dense cloud
-# Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
-# Filter: AggressiveFiltering, ModerateFiltering, MildFiltering, NoFiltering
-Quality = PhotoScan.Quality.LowestQuality
-FilterMode = PhotoScan.FilterMode.MildFiltering
-#
-# Variables for dense cloud ground point classification
-# Maximum distance is usually twice of image resolution
-# Which will be calculated later
-Max_Angle = 13
-Cell_Size = 10
-#
-# Variable for building 3D mesh
-# Surface: Arbitrary, HeightField
-# SurfaceSource: PointCloudData, DenseCloudData, DepthMapsData
-Surface = PhotoScan.SurfaceType.Arbitrary
-SurfaceSource = PhotoScan.DataSource.DepthMapsData
-#
-# Variable for building orthomosaic
-# Since 1.4.0, users can choose performing color correction (vignetting) and balance separately.
-# Blending: AverageBlending, MosaicBlending, MinBlending, MaxBlending, DisabledBlending
-# Color_correction: True, False
-# Color_balance: True, False
-BlendingMode = PhotoScan.BlendingMode.MosaicBlending
-Color_correction = False
-Color_balance = False
-#
-#######################################################
+    ErrTot = str(round(ErrorTotal,1))
+    return ErrTot
 
+#####------------------------------------------------------------------------------#####
+#####---------------------------- MAIN --------------------------------------------#####
+#####------------------------------------------------------------------------------#####
 if __name__ == '__main__':
+    print("Starting Program...")
+    
+    #####-----------------------------------Agisoft User variables---------------------------------------------------------------------#######
+    # Variables for image quality filter
+    # QualityFilter: True, False
+    # QualityCriteria: float number range from 0 to 1 (default 0.5)
+    QualityFilter = True
+    QualityCriteria = 0.5
+    #
+    # Variables for photo alignment
+    # Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
+    # Accuracy = PhotoScan.Accuracy.MediumAccuracy
+    Key_Limit = 60000
+    Tie_Limit = 3000
+    #  Metashape 1.6 Accuracy Variables
+    ALIGN = {"Highest":  0,
+             "High":   1,
+             "Medium": 2,
+             "Low":    4,
+             "Lowest": 8}
+    Accuracy = ALIGN["Medium"]
+    #
+    # Variables for building dense cloud
+    # Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
+    # Filter: AggressiveFiltering, ModerateFiltering, MildFiltering, NoFiltering
+    # Quality = PhotoScan.Quality.LowestQuality
+    # FilterMode = PhotoScan.FilterMode.MildFiltering
+    #
+    # Metashape 1.6 Quality Variables
+    DENSE = {"Ultra":  1,
+             "High":   2,
+             "Medium": 4,
+             "Low":    8,
+             "Lowest": 16}
+    Qualtiy = DENSE['Medium']
+    
+    # Metashape 1.6 Filtering Variables
+    FILTERING = {"3": PhotoScan.NoFiltering,
+                 "0": PhotoScan.MildFiltering,
+                 "1": PhotoScan.ModerateFiltering,
+                 "2": PhotoScan.AggressiveFiltering}
+    FilterMode = FILTERING['0']
+    #
+    #
+    # Variables for dense cloud ground point classification
+    # Maximum distance is usually twice of image resolution
+    # Which will be calculated later
+    Max_Angle = 13
+    Cell_Size = 10
+    #
+    # Variable for building 3D mesh
+    # Surface: Arbitrary, HeightField
+    # SurfaceSource: PointCloudData, DenseCloudData, DepthMapsData
+    Surface = PhotoScan.SurfaceType.Arbitrary
+    SurfaceSource = PhotoScan.DataSource.DepthMapsData
+    #
+    # Variable for building orthomosaic
+    # Since 1.4.0, users can choose performing color correction (vignetting) and balance separately.
+    # Blending: AverageBlending, MosaicBlending, MinBlending, MaxBlending, DisabledBlending
+    # Color_correction: True, False
+    # Color_balance: True, False
+    BlendingMode = PhotoScan.BlendingMode.MosaicBlending
+    Color_correction = False
+    Color_balance = False
+    # Set the project projection
+    new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
+    
+    
+    #####--------------------------------------------------Processing---------------------------------------------------------------#######
     # Define Folders to Process
     mainFold = "/SNOWDATA/SnowDrones-Processing/"
     Loc = "LDP"
@@ -499,19 +662,41 @@ if __name__ == '__main__':
             
     # AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
     # AllDates = AllDates[4:5]
-    AllDates = ["02-14-2020"]
-    DataType = ["RGB", "Thermal"]
+    AllDates = ["02-04-2020"]
+    # DataType = ["RGB", "Thermal"]
+    DataType = ["RGB"]
+    
+    #List of qualities to run at
+    qualtiyList = ["Medium", "Mediumpts", "MediumTie","MediumptsTie", "MediumptsTieExtra"]
+    # quality = qualtiyList[0]
+    Key_LimitList = [40000,100000,40000,100000,400000]
+    Tie_LimitList = [1000,1000,6000,6000,12000]
+    
+    # Processing to-do
+    loadPhotos = 1
+    markImages = 1 # Must have loadPhotos = 1
+    processImgs = 1
+    alignPhotos = 1 # Must have processImgs = 1
+    reduceError = 1 # Must have alignPhotos = 1
+    
+    # Create the DF to store Image Alignment Information
+    imgCount_df = pd.DataFrame({"Date": 0,
+                                "Medium" : 0,
+                                "MediumPts": 0,
+                                "MediumTie": 0,
+                                "MediumptsTie": 0,
+                                "MediumptsTieExtra": 0,}, index=[0])
     
     # Iter through all folders
     for ProcessDate in AllDates:
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
         #Where to save the metashape Project file
-        saveprojName = Loc + "_" +  ProcessDate +"_LowestTest.psx"
+        saveprojName = Loc + "_" +  ProcessDate +"_QualityTest.psx"
         psxfile = dateFolder + saveprojName
         
         # Clear the Console
-        PhotoScan.app.console.clear()
+        # PhotoScan.app.console.clear()
         # construct the document class
         doc = PhotoScan.app.document
         ## Open existing project or save project
@@ -522,132 +707,145 @@ if __name__ == '__main__':
         except:
             doc.save( psxfile )
         
-        for imgType in DataType:
-            typeFolder =  locFold + ProcessDate + "/" + imgType + "/"
-            if os.path.isdir(typeFolder):               
-                #Define the subfolder names
-                if imgType == "RGB":
-                    var = '10*/'
-                    imgExt = ".JPG"
-                elif imgType == "Thermal":
-                    var = '20*/'
-                    imgExt = ".tiff"
-                else:
-                    print("imgType is non-valid for folder iteration")
-                chunk = doc.addChunk()
-                chunkName = imgType
-                
-                # #If the document was opened and if the chunk already exists then skip the creation
-                # chunk_list = doc.chunks
-                # if all(openDoc == 1 and (chunkName in chunkList)):
-                #     print("TRUE")
-                # else:
-                #     print("FALSE")
-                
-                chunk.label = chunkName
-                for fold in sorted(glob.iglob(typeFolder + var)):
-                    fold = fold.replace('\\', '/')
-                    print(fold)
+        if loadPhotos == 1:
+            # List of existing chunks for each project
+            chunk_list = doc.chunks
+            
+            # Create a chunk for each image type
+            for imgType in DataType:
+                typeFolder =  locFold + ProcessDate + "/" + imgType + "/"
+                if os.path.isdir(typeFolder):               
+                    #Define the subfolder names
+                    if imgType == "RGB":
+                        var = '10*/'
+                        imgExt = ".JPG"
+                    elif imgType == "Thermal":
+                        var = '20*/'
+                        imgExt = ".tiff"
+                    else:
+                        print("imgType is non-valid for folder iteration")
                     
-                    ### Photo List ###
                     photoList = []
-                    getPhotoList(fold, photoList, imgExt)
-                    # Add photos to list
+                    for fold in sorted(glob.iglob(typeFolder + var)):
+                        fold = fold.replace('\\', '/')
+                        print(fold)
+                        
+                        ### Photo List ###
+                        # photoList = []
+                        getPhotoList(fold, photoList, imgExt)
+                        
+                        # #If the document was opened and the chunk already exists then skip the creation
+                        # if all(openDoc == 1 and (imgType in chunk_list)):
+                        #     print("Chunk already exists")
+                        # else:
+                        #     print("Creating the new chunk")
+                        #     # Add photos to list
+                        #     if photoList:
+                        #         chunk = doc.addChunk()
+                        #         chunk.label = imgType
+                        #         chunk.addPhotos(photoList)
+                        #         doc.save()
+                        #     else:
+                        #         print("Photo list is empty.")
+                                
+                                
+                    # Create imgType chunk
                     if photoList:
-                        chunk.addPhotos(photoList)
-                        doc.save()
-                    else:
-                        print("Photo list is empty.")
+                        for quality in qualtiyList:
+                            chunk = doc.addChunk()
+                            chunk.label = quality
+                            chunk.addPhotos(photoList)
+                            doc.save()
+                    
+                            if markImages == 1:                            
+                                # Read in the GCP locations on the Images
+                                typeFolder =  locFold + ProcessDate + "/RGB/"
+                                TargetFN = typeFolder + "GCPwithImageLocationsv2.csv"
+                                
+                                filelist = [GCP_coordFN, TargetFN]
+                                print(filelist)
+                                if all([os.path.isfile(f) for f in filelist]):
+                                    mark_Images(chunk, GCP_coordFN, TargetFN)
+                                else:
+                                    print("One of the GCP_coord csv files does not exist.")
+                        
+            # Remove any empty chunks
+            for chunk in list(doc.chunks):
+                if not len(chunk.cameras):
+                    doc.remove(chunk)
+            chunk_list = doc.chunks
+            print(chunk_list)
+        
+        
+        # Process the images
+        if processImgs == 1:
+            i = 0
+            temp_dict = {'Date': ProcessDate, 'Medium': 0, 'MediumPts': 0, 'MediumTie': 0, 'MediumptsTie': 0, 'MediumptsTieExtra': 0}
             
-                 
-        # Remove any empty chunks
-        for chunk in list(doc.chunks):
-            if not len(chunk.cameras):
-                doc.remove(chunk)
-                
-        chunk_list = doc.chunks
-        print(chunk_list)
-        # Loop for all initial chunks
-        for chunk in chunk_list:
-            doc.chunk = chunk
-            
-            if chunk.label == "RGB":
-                print("Processing RGB")
-            
+            for chunk in chunk_list:
+                doc.chunk = chunk
+                chunk.crs = new_crs
                 # Align Photo only if it is not done yet
-                if chunk.point_cloud is None:
-                    for i in range (len(chunk.cameras)):	
-                        print(chunk.cameras[i].label)
-                
-                    # Change Image Projection to UTM11
-                    new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
-                    # wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")
-                    for camera in chunk.cameras:
-                        camera.reference.location = new_crs.project(chunk.crs.unproject(camera.reference.location))
-                    
-                    
-                    # Read in the GCP locations on the Images
-                    typeFolder =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
-                    TargetFN = typeFolder + "GCPwithImageLocations.csv"
-                    
-                    filelist = [GCP_coordFN, TargetFN]
-                    if all([os.path.isfile(f) for f in filelist]):
-                        mark_Images(chunk, GCP_coordFN, TargetFN)
-                    else:
-                        print("GCP_coordFN does not exist.")
-                    
-    #                    add_altitude(chunk, flightHeightFile)
+                if alignPhotos == 1:
+                    Key_Limit = Key_LimitList[i]
+                    Tie_Limit = Tie_LimitList[i]
+                    successfulAlignment, temp_dict = AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria, new_crs, temp_dict)
+                    if reduceError == 1:
+                        # Save the new marker error
+                        beforeRE = markerError(chunk)
+                        beforeRE_Tie = str(len(chunk.point_cloud.points))  
                         
+                        ReduceError_RU(chunk)
+                        ReduceError_PA(chunk)
+                        ReduceError_RE(chunk)
                         
-                    # Set different quality parameters for alignment of images for Thermal and RGB
-                    if chunk.label == "Thermal":
-                        Accuracy = PhotoScan.Accuracy.HighAccuracy
-                    else:
-                        Accuracy = PhotoScan.Accuracy.LowestAccuracy
-                    
-                    # successfulAlignment = AlignPhoto(chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria)
-                    successfulAlignment = False
-                    # ReduceError_RU(chunk)
-                    # ReduceError_PA(chunk)
-                # If there already is a point cloud
+                        # Save the new marker error
+                        afterRE = markerError(chunk)
+                        afterRE_Tie = str(len(chunk.point_cloud.points))
+                        
+                        temp_dict[chunk.label] = temp_dict[chunk.label] + "__" + beforeRE + "->" + afterRE  + "__" + beforeRE_Tie + "->" + afterRE_Tie
+                        
                 else:
                     successfulAlignment = True
-                    
-                # Do the rest when there's tie point
-                if successfulAlignment:
-                    # Define the ortho file name and save location
-                    saveOrthoLoc =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
-                    saveOrthoName = Loc + "_" +  ProcessDate + "_" + str(chunk.label) +"_LowestOrtho.tif"
-                    saveOrtho = saveOrthoLoc + saveOrthoName
-        #            print(saveOrtho)
+                i += 1
+            imgCount_df = imgCount_df.append(temp_dict, ignore_index = True)
+            
+        #         # Do the rest when there's tie point
+        #         if successfulAlignment:
+        #             # Define the ortho file name and save location
+        #             saveOrthoLoc =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
+        #             saveOrthoName = Loc + "_" +  ProcessDate + "_" + str(chunk.label) +"_LowestOrtho.tif"
+        #             saveOrtho = saveOrthoLoc + saveOrthoName
+        # #            print(saveOrtho)
         
-                    # ReduceError_RE(chunk)
+        #             # if there are over 1000 RGB images:
+        #             #     splitInChunks(doc, chunk)
+
+        #             # Set quality parameters
+        #             Quality = PhotoScan.Quality.LowestQuality
                     
-                    # Set different quality parameters for Thermal and RGB
-                    if chunk.label == "Thermal":
-                        # For building dense cloud
-                        # Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
-                        Quality = PhotoScan.Quality.HighQuality
-                    else:
-                        Quality = PhotoScan.Quality.LowestQuality
-                    
-                    # try:
-                    #     StandardWorkflow(doc, chunk, saveOrtho,
-                    #                    Quality=Quality, FilterMode=FilterMode, 
-                    #                    Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
-                    #                    BlendingMode=BlendingMode)
-                    # except:
-                    #     print("Could not finish processing " + str(chunk.label) + "dataset.")
-                
+        #             try:
+        #                 StandardWorkflow(doc, chunk, saveOrtho,
+        #                                 Quality=Quality, FilterMode=FilterMode, 
+        #                                 Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
+        #                                 BlendingMode=BlendingMode)
+        #             except:
+        #                 print("Could not finish processing " + str(chunk.label) + "dataset.")
+        
+        print(temp_dict)
+        print(imgCount_df)
+        imgCount_outfile = locFold + ProcessDate + "/imgCount_df.csv"
+        imgCount_df.to_csv(imgCount_outfile)
         print("Finished Processing" + psxfile)
         # doc.clear()
-        
+    
+    # imgCount_df = imgTargets_df.iloc[1:]
+    # imgCount_df = imgTargets_df.reset_index()
+    # imgCount_df = imgTargets_df.drop(['index'], axis=1)
+
     # #Close the App
     # app = PhotoScan.Application()
     # app.quit()
 
 
-
-# Split into chunks if needed for highest res
-#    https://www.agisoft.com/forum/index.php?topic=6587.0
 

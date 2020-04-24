@@ -619,10 +619,7 @@ if __name__ == '__main__':
                 print("Processing RGB")
             
                 # Align Photo only if it is not done yet
-                if chunk.point_cloud is None:
-                    for i in range (len(chunk.cameras)):	
-                        print(chunk.cameras[i].label)
-                
+                if chunk.point_cloud is None:               
                     # Change Image Projection to UTM11
                     new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
                     # wgs_84 = PhotoScan.CoordinateSystem("EPSG::4326")

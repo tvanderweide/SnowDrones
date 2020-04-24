@@ -19,6 +19,8 @@ from PyQt5.QtGui import *
 import pandas as pd
 import os.path
 from skimage import io
+from datetime import datetime
+
 
 class View(QGraphicsView):
     photo_clicked = QtCore.pyqtSignal(QtCore.QPoint)
@@ -259,48 +261,58 @@ if __name__== "__main__":
     fieldSite = fieldSiteList[0]
     imgTypeList = ["RGB","Multispec","Thermal"]
     imgType = imgTypeList[0]
-    Date1 = "02-04-2020"
-    fn = mainFold + fieldSite + "/" + Date1 + "/" + imgType + "/"
+    locFold = mainFold + fieldSite + "/"
+    
+    AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+    ProcessDate = AllDates[5]
+    # ProcessDate = ["02-04-2020"]
+    print(ProcessDate)
+    
+    fn = locFold + ProcessDate + "/" + imgType + "/"
     # Load the Dataframe
     df_fn = fn + "imgTargets_df.feather"
     if os.path.isfile(df_fn):
         imgTarget_df = pd.read_feather(df_fn)
     else:
-        print('DataFrame with image list does not exist.')
-
+        print(df_fn)
+        print('does not exist.')
+    
     # Image File Path
     i = 0
     img_max = int(len(imgTarget_df.index) -1)
     
-    # Run the Visual
-    app = QApplication.instance()
-    if app is None:
-            app = QApplication([])
-    w = Window()
-    w.show()
-    w.raise_()
-    app.exec_()
-
-
-save_df = imgTarget_df.copy()
-
-#print(save_df.to_string())
-## Drop any columns that don't have entries
-#save_df = save_df[(save_df != 0).all(1)]
-#save_df = save_df[(save_df != 99999).all(1)]
-#
-#save_df = save_df.reset_index()
-#save_df = save_df.drop(['index'], axis=1)
-#
-#for i in range(len(save_df['Img_Name'])):
-#    tempName = save_df['Img_Name'][i].rpartition("/")[2].rpartition(".")[0]
-#    save_df.loc[save_df['Img_Name']==save_df['Img_Name'][i], ['Img_Name']] = tempName
-#    
-#print(save_df.to_string())
-
-## Save as comma delim CSV file without index
-#save_Fold = fn + "GCPwithImageLocations.csv"
-#save_df.to_csv(save_Fold, encoding='utf-8', index=False)
-
+    if len(imgTarget_df) > 1:
+        Cur_Date =  datetime.now().strftime("%m-%d")
+        
+        # Run the Visual
+        app = QApplication.instance()
+        if app is None:
+                app = QApplication([])
+        w = Window()
+        w.show()
+        w.raise_()
+        app.exec_()
+        
+        save_df = imgTarget_df.copy()
+        
+        print(save_df.to_string())
+        # Drop any columns that don't have entries
+        save_df = save_df[(save_df != 0).all(1)]
+        save_df = save_df[(save_df != 99999).all(1)]
+        
+        save_df = save_df.reset_index()
+        save_df = save_df.drop(['index'], axis=1)
+        
+        for i in range(len(save_df['Img_Name'])):
+            tempName = save_df['Img_Name'][i].rpartition("/")[2].rpartition(".")[0]
+            save_df.loc[save_df['Img_Name']==save_df['Img_Name'][i], ['Img_Name']] = tempName
+        
+        print(save_df.to_string())
+        
+        # Save as comma delim CSV file without index
+        save_Fold = fn + "GCPwithImageLocations_" + Cur_Date + ".csv"
+        save_df.to_csv(save_Fold, encoding='utf-8', index=False)
+    
+    print("Finished Running Script.")
 
 
