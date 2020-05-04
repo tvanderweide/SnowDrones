@@ -15,6 +15,9 @@ from datetime import datetime
 import pyproj
 import math
 import pandas as pd
+import time
+import subprocess
+import os
 
 ####--------------------------------------------------------------------------------------------------------------------####
 def read_RTK(csvFN):
@@ -24,6 +27,7 @@ def read_RTK(csvFN):
         reader = csv.DictReader(f)
         for row in reader:
             if row['Location'][0:3] == 'gcp':
+            # if (row['Location'][0:3] == 'gcp' and row['Location'][4:5] != 't'):
                 GCP_array.append(row)
     return GCP_array
 
@@ -76,35 +80,44 @@ def getCorners(ax, ay, cenLat, cenLon, heading):
 
 
 ####--------------------------------------------------------------------------------------------------------------------####
-def iter_folders(mainFold, fieldSite, imgType, Date1):
+def iter_folders(mainFold, fieldSite, imgType, DateObj):
     # Find the Image folder
     input_folder = mainFold + fieldSite + "/"
     
     img_list = []
     #Iterate through all the folders
     for day in sorted(glob.iglob(input_folder + '*')):
-        day_folder = day.rpartition("\\")[2]
+        day = day.replace('\\', '/')
+        day_folder = day.rpartition("/")[2]
 #        print(day)
         if day_folder[0] != "L":
             date = datetime.strptime(day_folder, '%m-%d-%Y').date()
-#            print(date)
-            if date == Date1:
+            # print(date)
+            if date == DateObj:
                 print(day_folder)
                 ImgTypeFold = day + "/" + imgType + "/"
-                for imgFolder in sorted(glob.iglob(ImgTypeFold + '*')):
-#                    print(imgFolder)
-                    img_folder = imgFolder.rpartition("\\")[2]
-                    if img_folder == "100MEDIA":
-                        for imgs in sorted(glob.iglob(imgFolder + '/*')):
-                            img_list.append(imgs)
+                if os.path.isdir(ImgTypeFold):  
+                    for imgFolder in sorted(glob.iglob(ImgTypeFold + '10*')):
+                        imgFolder = imgFolder.replace('\\', '/')
+                        print(imgFolder)
+                        if os.path.isdir(imgFolder):  
+                            img_folder = imgFolder.rpartition("/")[2]
+                            for imgs in sorted(glob.iglob(imgFolder + '/*.JPG')):
+                                imgs = imgs.replace('\\', '/')
+        #                            print(imgs)
+        #                            imgs = imgs.rpartition("/")[2]
+                                img_list.append(imgs)
 
-                csvFN = 'F:/SnowDrones/LDP/LDP_unprocessed_header.csv'
+                csvFN = input_folder + 'LDP_unprocessed_header.csv'
                 GCP_array = read_RTK(csvFN)
-                    
-                # Get image metadata
-                metadata = get_metadata(img_list)
-                # Dictionary that lists the images whose footprint covers the GCP
-                imgTargetList = get_imgTargetList(GCP_array, metadata)
+                
+                if img_list:
+                    # Get image metadata
+                    metadata = get_metadata(img_list)
+                    # Dictionary that lists the images whose footprint covers the GCP
+                    imgTargetList = get_imgTargetList(GCP_array, metadata)
+                else:
+                    imgTargetList = {}
                             
     return imgTargetList
 
@@ -156,6 +169,47 @@ def get_metadata(imgList):
     return metadata
 
 
+"""
+Mac users
+####--------------------------------------------------------------------------------------------------------------------####
+def get_metadataAlt(imgList):
+#    start = time.time()
+    import subprocess
+    # Create Empty Dictionary
+    infoDict = {}
+    #for Windows user 
+    exifToolPath = "C:/Users/Endure1/Documents/SnowDrones/exiftool-11.91/exiftool(-k).exe" 
+    #For mac and linux user
+#    exifToolPath = exiftool 
+    # Image File path
+    imgPath = imgList[0]
+    #call Exiftool from terminal window
+    process = subprocess.Popen([exifToolPath,imgPath],stdout=subprocess.PIPE, stderr=subprocess.STDOUT,universal_newlines=True) 
+    #get the tags in dict
+    for tag in process.stdout:
+        line = tag.strip().split(':')
+        infoDict[line[0].strip()] = line[-1].strip()
+    metadata = infoDict
+#    latlon = get_decimal_coordinates(metadataAlt[0]['GPSInfo'])
+    
+    return metadata
+
+
+def get_decimal_coordinates(info):
+    for key in ['Latitude', 'Longitude']:
+        if 'GPS'+key in info and 'GPS'+key+'Ref' in info:
+            e = info['GPS'+key]
+            ref = info['GPS'+key+'Ref']
+            info[key] = ( e[0][0]/e[0][1] +
+                          e[1][0]/e[1][1] / 60 +
+                          e[2][0]/e[2][1] / 3600
+                        ) * (-1 if ref in ['S','W'] else 1)
+
+    if 'Latitude' in info and 'Longitude' in info:
+        return [info['Latitude'], info['Longitude']]
+"""
+
+
 ####--------------------------------------------------------------------------------------------------------------------####
 def populateDF(Date1, imgTargetList, imgTargets_df):
     for key in imgTargetList:
@@ -179,30 +233,34 @@ fieldSite = fieldSiteList[0]
 imgTypeList = ["RGB","Multispec","Thermal"]
 imgType = imgTypeList[0]
 mainFold = "F:/SnowDrones/"
-Date1 = "02-04-2020"
-datetime_obj = datetime.strptime(Date1, '%m-%d-%Y').date()
+locFold = mainFold + fieldSite + "/"
+
+AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+
+for ProcessDate in AllDates:
+    datetime_obj = datetime.strptime(ProcessDate, '%m-%d-%Y').date()
+
+    imgTargetList = iter_folders(mainFold, fieldSite, imgType, datetime_obj)
     
-imgTargetList = iter_folders(mainFold, fieldSite, imgType, datetime_obj)
-
-# Create the DF
-imgTargets_df = pd.DataFrame({"Date": Date1,
-                       "Marker_Name" : 0,
-                       "Img_Name": 0,
-                       "Img_X": 0,
-                       "Img_Y": 0,}, index=[0])
-
-imgTargets_df = populateDF(Date1, imgTargetList, imgTargets_df)
-imgTargets_df = imgTargets_df.iloc[1:]
-imgTargets_df = imgTargets_df.reset_index()
-imgTargets_df = imgTargets_df.drop(['index'], axis=1)
-
-# Save the target list as feather
-imgTargets_outfile = mainFold + fieldSite + "/" + Date1 + "/" + imgType + "/imgTargets_df.feather"
-print("Saving df to: " + imgTargets_outfile)
-imgTargets_df.to_feather(imgTargets_outfile)
+    # Create the DF
+    imgTargets_df = pd.DataFrame({"Date": ProcessDate,
+                           "Marker_Name" : 0,
+                           "Img_Name": 0,
+                           "Img_X": 0,
+                           "Img_Y": 0,}, index=[0])
+    
+    imgTargets_df = populateDF(ProcessDate, imgTargetList, imgTargets_df)
+    imgTargets_df = imgTargets_df.iloc[1:]
+    imgTargets_df = imgTargets_df.reset_index()
+    imgTargets_df = imgTargets_df.drop(['index'], axis=1)
+    
+    # Save the target list as feather
+    imgTargets_outfile = mainFold + fieldSite + "/" + ProcessDate + "/" + imgType + "/imgTargets_df.feather"
+    print("Saving df to: " + imgTargets_outfile)
+    imgTargets_df.to_feather(imgTargets_outfile)
 
 
-print("Finished saving feather")
+print("Finished running script")
 
 
 
