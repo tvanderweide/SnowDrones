@@ -601,7 +601,7 @@ if __name__ == '__main__':
     
     #####--------------------------------------------------Processing---------------------------------------------------------------#######
     ## Define Folders to Process
-    mainFold = "/SNOWDATA/SnowDrones-Processing(2)/"
+    mainFold = "/SNOWDATA/SnowDrones_Processing_Tom/"
     Loc = "LDP"
     locFold = mainFold + Loc + "/"
     
@@ -611,13 +611,13 @@ if __name__ == '__main__':
     ## List of dates to run code
     # AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
     # AllDates = AllDates[0:6]
-    AllDates = ["02-14-2020"]
+    AllDates = ["11-16-2019"]
     # DataType = ["RGB", "Thermal"]
     DataType = ["RGB"]
     
     ##List of qualities to run at
     # Accuracy: Highest, High, Medium, Low, Lowest
-    accuracyLvl = "Medium"
+    accuracyLvl = "Low"
     Accuracy = ALIGN[accuracyLvl]
     # Set Max number of Key points for alignment
     Key_Limit = 40000
@@ -625,22 +625,22 @@ if __name__ == '__main__':
     Tie_Limit = 1000
     # Filtering: 0 = Mild, 1 = Moderate, 2 = Aggressive, 3 = None
     FilterMode = FILTERING['0']
-    # Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
-    Qualtiy = DENSE['Ultra']
+    # Quality: Ultra, High, Medium, Low, Lowest
+    Qualtiy = DENSE['Low']
     
     # Processing to-do
     loadPhotos = 1
     markImages = 1 # Must have loadPhotos = 1
-    processImgs = 1
-    alignPhotos = 1 # Must have processImgs = 1
-    reduceError = 1 # Must have alignPhotos = 1
+    processImgs = 0
+    alignPhotos = 0 # Must have processImgs = 1
+    reduceError = 0 # Must have alignPhotos = 1
     
     # Iter through all folders
     for ProcessDate in AllDates:
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
         #Where to save the metashape Project file
-        saveprojName = Loc + "_" +  ProcessDate +"_TempName.psx"
+        saveprojName = Loc + "_" +  ProcessDate +"_TempName_Thomas.psx"
         psxfile = dateFolder + saveprojName
         
         # Clear the Console
@@ -688,7 +688,7 @@ if __name__ == '__main__':
                         chunk.addPhotos(photoList)
                         doc.save()
                 
-                        if markImages == 1:                            
+                        if markImages == 1:                          
                             # Read in the GCP locations on the Images
                             typeFolder =  locFold + ProcessDate + "/RGB/"
                             TargetFN = typeFolder + "GCPwithImageLocations.csv"
