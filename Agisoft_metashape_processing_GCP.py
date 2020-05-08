@@ -603,7 +603,7 @@ if __name__ == '__main__':
              "Medium": 2,
              "Low":    4,
              "Lowest": 8}
-    Accuracy = ALIGN["Medium"]
+    Accuracy = ALIGN["Highest"]
     #
     # Variables for building dense cloud
     # Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
@@ -617,7 +617,7 @@ if __name__ == '__main__':
              "Medium": 4,
              "Low":    8,
              "Lowest": 16}
-    Qualtiy = DENSE['Medium']
+    Qualtiy = DENSE['Ultra']
     
     # Metashape 1.6 Filtering Variables
     FILTERING = {"3": PhotoScan.NoFiltering,
@@ -653,52 +653,56 @@ if __name__ == '__main__':
     
     #####--------------------------------------------------Processing---------------------------------------------------------------#######
     # Define Folders to Process
-    mainFold = "/SNOWDATA/SnowDrones-Processing/"
+    mainFold = "F:/SnowDrones-Processing/"
     Loc = "LDP"
     locFold = mainFold + Loc + "/"
     
     # Read in the GCP RTK Target GPS coordinates
     GCP_coordFN = locFold + Loc + "_unprocessed.csv"
             
-    # AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
-    # AllDates = AllDates[4:5]
-    AllDates = ["02-04-2020"]
+    AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+    AllDates = AllDates[0:6]
+    # AllDates = ["02-04-2020"]
     # DataType = ["RGB", "Thermal"]
     DataType = ["RGB"]
     
     #List of qualities to run at
-    qualtiyList = ["Medium", "Mediumpts", "MediumTie","MediumptsTie", "MediumptsTieExtra"]
+    # qualtiyList = ["Medium", "Mediumpts", "MediumTie","MediumptsTie", "MediumptsTieExtra"]
+    # Key_LimitList = [40000,100000,40000,100000,400000]
+    # Tie_LimitList = [1000,1000,6000,6000,12000]
+    qualtiyList = ["High", "High2"]
+    Key_LimitList = [40000,180000]
+    Tie_LimitList = [1000,0]
+    
     # quality = qualtiyList[0]
-    Key_LimitList = [40000,100000,40000,100000,400000]
-    Tie_LimitList = [1000,1000,6000,6000,12000]
     
     # Processing to-do
-    loadPhotos = 1
-    markImages = 1 # Must have loadPhotos = 1
+    loadPhotos = 0
+    markImages = 0 # Must have loadPhotos = 1
     processImgs = 1
-    alignPhotos = 1 # Must have processImgs = 1
-    reduceError = 1 # Must have alignPhotos = 1
+    alignPhotos = 0 # Must have processImgs = 1
+    reduceError = 0 # Must have alignPhotos = 1
+    createDEM = 1
+    classifyGround = 1
+    createDEM2 = 1
     
     # Create the DF to store Image Alignment Information
     imgCount_df = pd.DataFrame({"Date": 0,
-                                "Medium" : 0,
-                                "MediumPts": 0,
-                                "MediumTie": 0,
-                                "MediumptsTie": 0,
-                                "MediumptsTieExtra": 0,}, index=[0])
+                                "High" : 0,
+                                "High2": 0,}, index=[0])
     
     # Iter through all folders
     for ProcessDate in AllDates:
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
         #Where to save the metashape Project file
-        saveprojName = Loc + "_" +  ProcessDate +"_QualityTest.psx"
+        saveprojName = Loc + "_" +  ProcessDate +"_QualityTest2.psx"
         psxfile = dateFolder + saveprojName
         
         # Clear the Console
         # PhotoScan.app.console.clear()
         # construct the document class
-        doc = PhotoScan.app.document
+        doc = PhotoScan.Document()
         ## Open existing project or save project
         openDoc = 0
         try:
@@ -760,7 +764,7 @@ if __name__ == '__main__':
                             if markImages == 1:                            
                                 # Read in the GCP locations on the Images
                                 typeFolder =  locFold + ProcessDate + "/RGB/"
-                                TargetFN = typeFolder + "GCPwithImageLocationsv2.csv"
+                                TargetFN = typeFolder + "GCPwithImageLocations_04-23.csv"
                                 
                                 filelist = [GCP_coordFN, TargetFN]
                                 print(filelist)
@@ -780,8 +784,8 @@ if __name__ == '__main__':
         # Process the images
         if processImgs == 1:
             i = 0
-            temp_dict = {'Date': ProcessDate, 'Medium': 0, 'MediumPts': 0, 'MediumTie': 0, 'MediumptsTie': 0, 'MediumptsTieExtra': 0}
-            
+            # temp_dict = {'Date': ProcessDate, 'Medium': 0, 'MediumPts': 0, 'MediumTie': 0, 'MediumptsTie': 0, 'MediumptsTieExtra': 0}
+            temp_dict = {'Date': ProcessDate, 'High': 0, 'High2': 0}
             for chunk in chunk_list:
                 doc.chunk = chunk
                 chunk.crs = new_crs
@@ -831,12 +835,16 @@ if __name__ == '__main__':
         #                                 BlendingMode=BlendingMode)
         #             except:
         #                 print("Could not finish processing " + str(chunk.label) + "dataset.")
-        
-        print(temp_dict)
-        print(imgCount_df)
-        imgCount_outfile = locFold + ProcessDate + "/imgCount_df.csv"
-        imgCount_df.to_csv(imgCount_outfile)
-        print("Finished Processing" + psxfile)
+        doc.save()
+        doc.clear()
+    print(temp_dict)
+    print(imgCount_df)
+    imgCount_outfile = locFold + "/imgCount_df2.csv"
+    imgCount_df = imgCount_df.iloc[1:]
+    imgCount_df = imgCount_df.reset_index()
+    imgCount_df = imgCount_df.drop(['index'], axis=1)
+    imgCount_df.to_csv(imgCount_outfile)
+    print("Finished Processing" + psxfile)
         # doc.clear()
     
     # imgCount_df = imgTargets_df.iloc[1:]
