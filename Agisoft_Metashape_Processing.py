@@ -684,7 +684,7 @@ if __name__ == '__main__':
     Loc = "LDP"
     locFold = mainFold + Loc + "/"
     # Where to save the CSV File
-    imgCount_outfile = locFold + "/imgCount_df_10-25.csv"
+    imgCount_outfile = locFold + "/imgCount_df.csv"
             
     AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
     AllDates = AllDates[0:7]
@@ -719,31 +719,32 @@ if __name__ == '__main__':
     createDEM2 = 0
     createOrtho = 1
     
-    # Dictionary with headers
-    mainDict = {"Date": 0,
-                "Accuracy" : 0,
-                "Key_Limit" : 0,
-                "Tie_Limit" : 0,
-                "Quality" : 0,
-                "Filter" : 0,
-                "Aligned" : 0,
-                "Total" : 0,
-                "Img_Quality_Avg" : 0,
-                "RU_Thresh" : 0,
-                "PA_Thresh" : 0,
-                "RE_Thresh" : 0,
-                "Tie_ptsBefore" : 0,
-                "Marker_errBefore" : 0,
-                "Tie_ptsAfter" : 0,
-                "Marker_errAfter" : 0}
     
     # Iter through all folders
     i = 0 # Used to save the header in the CSV file
     for ProcessDate in AllDates:
+        # Clear dictionary items
+        temp_dict = {"Date": 0,
+                        "Accuracy" : 0,
+                        "Key_Limit" : 0,
+                        "Tie_Limit" : 0,
+                        "Quality" : 0,
+                        "Filter" : 0,
+                        "Aligned" : 0,
+                        "Total" : 0,
+                        "Img_Quality_Avg" : 0,
+                        "RU_Thresh" : 0,
+                        "PA_Thresh" : 0,
+                        "RE_Thresh" : 0,
+                        "Tie_ptsBefore" : 0,
+                        "Marker_errBefore" : 0,
+                        "Tie_ptsAfter" : 0,
+                        "Marker_errAfter" : 0}
+        
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
         #Where to save the metashape Project file
-        saveprojName = Loc + "_" +  ProcessDate + "_High_10-25.psx"
+        saveprojName = Loc + "_" +  ProcessDate + "_High.psx"
         psxfile = dateFolder + saveprojName
         
         # Clear the Console
@@ -843,7 +844,7 @@ if __name__ == '__main__':
                     if createDEM == 1:
                         # Define the ortho file name and save location
                         saveOrthoLoc =  locFold + ProcessDate + "/RGB/"
-                        saveOrthoName = Loc + "_" + ProcessDate + "_" + str(chunk.label) + "_Ortho-10_25.tif"
+                        saveOrthoName = Loc + "_" + ProcessDate + "_" + str(chunk.label) + "_Ortho.tif"
                         saveOrtho = saveOrthoLoc + saveOrthoName
             
                         # if there are over 1000 RGB images:
@@ -878,7 +879,7 @@ if __name__ == '__main__':
         
         doc.save()
         print("Finished Processing" + psxfile)
-        doc.clear()
+        
     
         # Save the results to a CSV file
         with open(imgCount_outfile, 'a', newline='') as csv_file:
@@ -889,6 +890,9 @@ if __name__ == '__main__':
                 writer.writeheader()
                 i += 1
             writer.writerow(temp_dict)
+        
+        # Clear the doc before processing next day
+        doc.clear()
     
     #End ProcessDays For Loop
 
