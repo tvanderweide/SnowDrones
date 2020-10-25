@@ -5,7 +5,7 @@ Aerial Imagery Processing
 These scripts were created to process a time series worth of data in Agisoft Metashape. The GCP selection is done using 'imgTargetList' and 'GCP_Locations' on your own PC because doing it on Agisoft over VPN was lagging hard. The main script is 'Agisoft_Metashape_Processing' which needs to be run from Metashape using Tools -> Run Script. 
 
 ## Install
-Once you have anaconda installed and envrionment.yml downloaded  
+The install is used to run 'imgTargetList' and 'GCP_Locations'. If it doesn't work just install the packages to whichever enviornment you want one-by-one since there are only a handful. Once you have anaconda installed and envrionment.yml downloaded  
 **Use the terminal for the following steps:**  
 ```
 conda env create -f environment.yml
