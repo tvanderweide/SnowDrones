@@ -1,11 +1,8 @@
 """
-v2 adds Next and Prev buttons
-v3
-Reorders widget buttons
-adds Enter/Skip buttons
-mouse wheel zoom
-Save point clicked to DF
+Script to save point clicked on image to CSV file able to be imported by Agisoft
+author: Thomas Van Der Weide
 """
+
 #####--------------------------------------------------------------------------------------------------------------------####
 #########------------------------------------------pyQT Zoom -------------------------------------------------------########
 #####--------------------------------------------------------------------------------------------------------------------####
