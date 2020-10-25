@@ -44,7 +44,6 @@ try:
 except ImportError:
     import PhotoScan
 # import split_in_chunks_python
-import pandas as pd
 import csv
 
 
@@ -720,26 +719,26 @@ if __name__ == '__main__':
     createDEM2 = 0
     createOrtho = 1
     
-    # Create the DF to store Image Alignment Information
-    imgCount_df = pd.DataFrame({"Date": 0,
-                                "Accuracy" : 0,
-                                "Key_Limit" : 0,
-                                "Tie_Limit" : 0,
-                                "Quality" : 0,
-                                "Filter" : 0,
-                                "Aligned" : 0,
-                                "Total" : 0,
-                                "Img_Quality_Avg" : 0,
-                                "RU_Thresh" : 0,
-                                "PA_Thresh" : 0,
-                                "RE_Thresh" : 0,
-                                "Tie_ptsBefore" : 0,
-                                "Marker_errBefore" : 0,
-                                "Tie_ptsAfter" : 0,
-                                "Marker_errAfter" : 0}, index=[0])
+    # Dictionary with headers
+    mainDict = {"Date": 0,
+                "Accuracy" : 0,
+                "Key_Limit" : 0,
+                "Tie_Limit" : 0,
+                "Quality" : 0,
+                "Filter" : 0,
+                "Aligned" : 0,
+                "Total" : 0,
+                "Img_Quality_Avg" : 0,
+                "RU_Thresh" : 0,
+                "PA_Thresh" : 0,
+                "RE_Thresh" : 0,
+                "Tie_ptsBefore" : 0,
+                "Marker_errBefore" : 0,
+                "Tie_ptsAfter" : 0,
+                "Marker_errAfter" : 0}
     
     # Iter through all folders
-    i = 0
+    i = 0 # Used to save the header in the CSV file
     for ProcessDate in AllDates:
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
@@ -881,24 +880,15 @@ if __name__ == '__main__':
         print("Finished Processing" + psxfile)
         doc.clear()
     
-        
-        if i ==0:        
-            imgCount_df = imgCount_df.iloc[1:]
-            imgCount_df = imgCount_df.reset_index()
-            imgCount_df = imgCount_df.drop(['index'], axis=1)
-            ##Bug where to_csv needs to have column order defined
-            imgCount_df.to_csv(imgCount_outfile, columns=['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total', 'Img_Quality_Avg', 'RU_Thresh',
-                                                          'PA_Thresh','RE_Thresh','Tie_ptsBefore','Marker_errBefore','Tie_ptsAfter','Marker_errAfter'])
-            i += 1
-        else:
-            with open(imgCount_outfile, 'r+') as csv_file:
-                ##Bug where 'a+' isn't able to get the [-1] location to add a newline
-                fieldnames = ['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total', 'Img_Quality_Avg', 'RU_Thresh', 'PA_Thresh','RE_Thresh',
-                              'Tie_ptsBefore','Marker_errBefore','Tie_ptsAfter','Marker_errAfter']
-                writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=',')
-                if '\n' not in csv_file.readlines()[-1]:
-                    csv_file.write("\n")
-                writer.writerow(temp_dict)
+        # Save the results to a CSV file
+        with open(imgCount_outfile, 'a', newline='') as csv_file:
+            fieldnames = ['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total', 'Img_Quality_Avg', 'RU_Thresh', 'PA_Thresh','RE_Thresh',
+                          'Tie_ptsBefore','Marker_errBefore','Tie_ptsAfter','Marker_errAfter']
+            writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=',')
+            if i == 0:
+                writer.writeheader()
+                i += 1
+            writer.writerow(temp_dict)
     
     #End ProcessDays For Loop
 
