@@ -76,7 +76,7 @@ def getCorners(ax, ay, cenLat, cenLon, heading):
 
 
 ####--------------------------------------------------------------------------------------------------------------------####
-def iter_folders(mainFold, fieldSite, imgType, Date1):
+def iter_folders(mainFold, fieldSite, imgType, DateObj):
     # Find the Image folder
     input_folder = mainFold + fieldSite + "/"
     
@@ -89,8 +89,8 @@ def iter_folders(mainFold, fieldSite, imgType, Date1):
         if day_folder[0] != "L":
             date = datetime.strptime(day_folder, '%m-%d-%Y').date()
 #            print(date)
-            if date == Date1:
-                print(day_folder)
+            if date == DateObj:
+#                print(day_folder)
                 ImgTypeFold = day + "/" + imgType + "/"
                 for imgFolder in sorted(glob.iglob(ImgTypeFold + '*')):
 #                    print(imgFolder)

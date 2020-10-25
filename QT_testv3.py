@@ -264,7 +264,7 @@ if __name__== "__main__":
     locFold = mainFold + fieldSite + "/"
     
     AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
-    ProcessDate = AllDates[5]
+    ProcessDate = AllDates[7]
     # ProcessDate = ["02-04-2020"]
     print(ProcessDate)
     
@@ -310,8 +310,8 @@ if __name__== "__main__":
         print(save_df.to_string())
         
         # Save as comma delim CSV file without index
-        save_Fold = fn + "GCPwithImageLocations_" + Cur_Date + ".csv"
-        save_df.to_csv(save_Fold, encoding='utf-8', index=False)
+        save_Fold = fn + "GCPwithImageLocations.csv"
+        # save_df.to_csv(save_Fold, encoding='utf-8', index=False)
     
     print("Finished Running Script.")
 

@@ -90,7 +90,8 @@ def iter_folders(mainFold, fieldSite, imgType, DateObj):
         day = day.replace('\\', '/')
         day_folder = day.rpartition("/")[2]
 #        print(day)
-        if day_folder[0] != "L":
+        # if day_folder[0] != "L":
+        if os.path.isdir(day_folder):
             date = datetime.strptime(day_folder, '%m-%d-%Y').date()
             # print(date)
             if date == DateObj:
@@ -102,15 +103,14 @@ def iter_folders(mainFold, fieldSite, imgType, DateObj):
                         print(imgFolder)
                         if os.path.isdir(imgFolder):  
                             img_folder = imgFolder.rpartition("/")[2]
-                            for imgs in sorted(glob.iglob(imgFolder + '/*.JPG')):
+                            for imgs in sorted(glob.iglob(img_folder + '/*.JPG')):
                                 imgs = imgs.replace('\\', '/')
         #                            print(imgs)
         #                            imgs = imgs.rpartition("/")[2]
                                 img_list.append(imgs)
 
-                csvFN = input_folder + 'LDP_unprocessed_header.csv'
+                csvFN = input_folder + fieldSite + '_unprocessed_header.csv'
                 GCP_array = read_RTK(csvFN)
-                
                 if img_list:
                     # Get image metadata
                     metadata = get_metadata(img_list)
@@ -133,6 +133,7 @@ def get_imgTargetList(GCP_array, md):
     imgTargetList = {}
     # Transform to project coordinates from WGS84 to UTM
     p = pyproj.Proj("+proj=utm +zone=11T +ellps=WGS84 +datum=WGS84 +units=m +no_defs")
+    
     for GCP in GCP_array:
         if GCP['Location'][-1:] != 't':
             imgList = []
@@ -167,6 +168,7 @@ def get_metadata(imgList):
             metadata = et.get_metadata(imgList)
 
     return metadata
+
 
 
 """
@@ -236,6 +238,9 @@ mainFold = "F:/SnowDrones/"
 locFold = mainFold + fieldSite + "/"
 
 AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+ProcessDate = AllDates[7]
+# ProcessDate = ["02-04-2020"]
+print(ProcessDate)
 
 for ProcessDate in AllDates:
     datetime_obj = datetime.strptime(ProcessDate, '%m-%d-%Y').date()
@@ -261,14 +266,6 @@ for ProcessDate in AllDates:
 
 
 print("Finished running script")
-
-
-
-
-
-
-
-
 
 
 
