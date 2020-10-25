@@ -2,7 +2,6 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Mar 16 13:21:23 2020
-@author: Yu-Hsuan Tu
 @author: Thomas Van Der Weide
 This Python Script is developed for Agisoft MetaShape 1.5.5
 Python core is 3.8.1
