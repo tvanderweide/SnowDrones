@@ -601,7 +601,7 @@ if __name__ == '__main__':
     
     #####--------------------------------------------------Processing---------------------------------------------------------------#######
     ## Define Folders to Process
-    mainFold = "/SNOWDATA/SnowDrones_Processing_Tom/"
+    mainFold = "/SNOWDATA/SnowDrones_Processing/"
     Loc = "LDP"
     locFold = mainFold + Loc + "/"
     
@@ -609,15 +609,15 @@ if __name__ == '__main__':
     GCP_coordFN = locFold + Loc + "_unprocessed.csv"
             
     ## List of dates to run code
-    # AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
-    # AllDates = AllDates[0:6]
-    AllDates = ["11-16-2019"]
+    AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
+    AllDates = AllDates[0:6]
+    # AllDates = ["11-16-2019"]
     # DataType = ["RGB", "Thermal"]
     DataType = ["RGB"]
     
     ##List of qualities to run at
     # Accuracy: Highest, High, Medium, Low, Lowest
-    accuracyLvl = "Low"
+    accuracyLvl = "Medium"
     Accuracy = ALIGN[accuracyLvl]
     # Set Max number of Key points for alignment
     Key_Limit = 40000
@@ -626,21 +626,24 @@ if __name__ == '__main__':
     # Filtering: 0 = Mild, 1 = Moderate, 2 = Aggressive, 3 = None
     FilterMode = FILTERING['0']
     # Quality: Ultra, High, Medium, Low, Lowest
-    Qualtiy = DENSE['Low']
+    Quality = DENSE['Medium']
     
     # Processing to-do
     loadPhotos = 1
     markImages = 1 # Must have loadPhotos = 1
-    processImgs = 0
-    alignPhotos = 0 # Must have processImgs = 1
-    reduceError = 0 # Must have alignPhotos = 1
+    processImgs = 1
+    alignPhotos = 1 # Must have processImgs = 1
+    reduceError = 1 # Must have alignPhotos = 1
+    createDEM = 1
+    classifyGround = 1
+    createDEM2 = 1
     
     # Iter through all folders
     for ProcessDate in AllDates:
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
         #Where to save the metashape Project file
-        saveprojName = Loc + "_" +  ProcessDate +"_TempName_Thomas.psx"
+        saveprojName = Loc + "_" +  ProcessDate +"_DEM_Test.psx"
         psxfile = dateFolder + saveprojName
         
         # Clear the Console
@@ -691,7 +694,7 @@ if __name__ == '__main__':
                         if markImages == 1:                          
                             # Read in the GCP locations on the Images
                             typeFolder =  locFold + ProcessDate + "/RGB/"
-                            TargetFN = typeFolder + "GCPwithImageLocations.csv"
+                            TargetFN = typeFolder + "GCPwithImageLocations_04-23.csv"
                             
                             filelist = [GCP_coordFN, TargetFN]
                             print(filelist)
@@ -732,27 +735,28 @@ if __name__ == '__main__':
                     successfulAlignment = True
                 i += 1
             
-        #         # Do the rest when there's tie point
-        #         if successfulAlignment:
-        #             # Define the ortho file name and save location
-        #             saveOrthoLoc =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
-        #             saveOrthoName = Loc + "_" +  ProcessDate + "_" + str(chunk.label) +"_LowestOrtho.tif"
-        #             saveOrtho = saveOrthoLoc + saveOrthoName
-        # #            print(saveOrtho)
-        
-        #             # if there are over 1000 RGB images:
-        #             #     splitInChunks(doc, chunk)
-
-        #             # Set quality parameters
-        #             Quality = PhotoScan.Quality.LowestQuality
-                    
-        #             try:
-        #                 StandardWorkflow(doc, chunk, saveOrtho,
-        #                                 Quality=Quality, FilterMode=FilterMode, 
-        #                                 Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
-        #                                 BlendingMode=BlendingMode)
-        #             except:
-        #                 print("Could not finish processing " + str(chunk.label) + "dataset.")
+                # Do the rest when there's tie point
+                if successfulAlignment:
+                    if classifyGround == 1:
+                        # Define the ortho file name and save location
+                        saveOrthoLoc =  locFold + ProcessDate + "/" + str(chunk.label) + "/"
+                        saveOrthoName = Loc + "_" +  ProcessDate + "_" + str(chunk.label) + "_" + accuracyLvl + "_Ortho.tif"
+                        saveOrtho = saveOrthoLoc + saveOrthoName
+            #            print(saveOrtho)
+            
+                        # if there are over 1000 RGB images:
+                        #     splitInChunks(doc, chunk)
+                        
+                        try:
+                            StandardWorkflow(doc, chunk, saveOrtho,
+                                            Quality=Quality, FilterMode=FilterMode, 
+                                            Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
+                                            BlendingMode=BlendingMode)
+                        except:
+                            print("Could not finish processing " + str(chunk.label) + "dataset.")
+                            
+                            
+        # doc.open( psxfile, read_only=False, ignore_lock=True )
         doc.save()
         doc.clear()
 
