@@ -32,12 +32,13 @@ python setup.py install
 
 ## Code Overview
 ### RenameDJI_Images.py
-This should be run first. It renames all the images taken with a DJI Mavic Pro so Agisoft can recognize the imported GCP locations correctly. Files simply have the folder they are in appened to the end of the file name. EX) DJI_0001_100MEDIA.JPG
+This should be run first. It renames all the images taken with a DJI Mavic Pro so Agisoft can recognize the imported GCP locations correctly. Files simply have the folder they are in appened to the end of the file name.  
+EX) DJI_0001_100MEDIA.JPG
 
 ### imgTargetList.py
 This script uses GPS coordinates from the image metadata to save a feather database file with all images that theoretically could contain at least one GCP.  
 The feather file is saved to:  
-/SNOWDATA/SnowDrones-Processing/\<Site>/\<Date>/\<ImgType>/imgTargets_df.feather  
+**/SNOWDATA/SnowDrones-Processing/\<Site>/\<Date>/\<ImgType>/imgTargets_df.feather**
 The csv containing GCP locations is expected to be at:  
 **/SNOWDATA/SnowDrones-Processing/\<Site>/\<Site>.csv**  
 User defines the survey site, image type, main folder path, and which days to process.  
