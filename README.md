@@ -38,7 +38,7 @@ EX) DJI_0001_100MEDIA.JPG
 ### imgTargetList.py
 This script uses GPS coordinates from the image metadata to save a feather database file with all images that theoretically could contain at least one GCP.  
 The feather file is saved to:  
-**/SNOWDATA/SnowDrones-Processing/\<Site>/\<Date>/\<ImgType>/imgTargets_df.feather**
+**/SNOWDATA/SnowDrones-Processing/\<Site>/\<Date>/\<ImgType>/imgTargets_df.feather**  
 The csv containing GCP locations is expected to be at:  
 **/SNOWDATA/SnowDrones-Processing/\<Site>/\<Site>.csv**  
 User defines the survey site, image type, main folder path, and which days to process.  
