@@ -45,6 +45,7 @@ except ImportError:
     import PhotoScan
 # import split_in_chunks_python
 import csv
+import time
 
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
@@ -258,8 +259,8 @@ def AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie
                 aligned_list.append(camera)
     align2 = len(aligned_list)
     
-    # if more than 60% of images were aligned
-    if align2 >= originalCount * 0.75:
+    # if more than 70% of images were aligned
+    if align2 >= (originalCount * 0.7):
         successAlignment = True
         # enabling rolling shutter compensation
         try:
@@ -612,12 +613,6 @@ if __name__ == '__main__':
     print("Starting Program...")
     
     #####-----------------------------------Agisoft User variables---------------------------------------------------------------------#######
-    # Variables for image quality filter
-    # QualityFilter: True, False
-    # QualityCriteria: float number range from 0 to 1 (default 0.5)
-    QualityFilter = True
-    QualityCriteria = 0.5
-    #
     # Variables for photo alignment
     # Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
     # Accuracy = PhotoScan.Accuracy.MediumAccuracy
@@ -670,6 +665,7 @@ if __name__ == '__main__':
     BlendingMode = PhotoScan.BlendingMode.MosaicBlending
     Color_correction = False
     Color_balance = False
+    
     # Set the project projection
     # PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
     # PhotoScan.CoordinateSystem("EPSG::4326")  #WGS84
@@ -677,6 +673,13 @@ if __name__ == '__main__':
     img_crs = PhotoScan.CoordinateSystem("EPSG::4326") #Coordinate System of Image geotags
     new_crs = PhotoScan.CoordinateSystem("EPSG::4326") #Desired Output Coordinate system
     gcp_ref_acc = 0.1 #Estimated accuracy of GCP GPS coordinates in meters
+    
+    # Variables for image quality filter
+    # QualityFilter: True, False
+    # QualityCriteria: float number range from 0 to 1 (default 0.5)
+    QualityFilter = True
+    QualityCriteria = 0.5
+    
     
     #####--------------------------------------------------Processing---------------------------------------------------------------#######
     # Define Folders to Process
@@ -723,6 +726,7 @@ if __name__ == '__main__':
     # Iter through all folders
     i = 0 # Used to save the header in the CSV file
     for ProcessDate in AllDates:
+        start = time.time()
         # Clear dictionary items
         temp_dict = {"Date": 0,
                         "Accuracy" : 0,
@@ -733,6 +737,7 @@ if __name__ == '__main__':
                         "Aligned" : 0,
                         "Total" : 0,
                         "Img_Quality_Avg" : 0,
+                        "ProcessTime" : 0,
                         "RU_Thresh" : 0,
                         "PA_Thresh" : 0,
                         "RE_Thresh" : 0,
@@ -857,7 +862,9 @@ if __name__ == '__main__':
                                             BlendingMode=BlendingMode)
                         except:
                             print("Could not finish processing " + str(chunk.label) + "dataset.")
-            
+        
+        end = time.time()
+        processTime = end - start
         temp_dict= {"Date": ProcessDate,
                     "Accuracy" : accuracyLvl,
                     "Key_Limit" : Key_Limit,
@@ -867,6 +874,7 @@ if __name__ == '__main__':
                     "Aligned" : align_Img,
                     "Total" : tot_Img,
                     "Img_Quality_Avg" : ImgQual,
+                    "ProcessTime" : processTime,
                     "RU_Thresh" : RUT,
                     "PA_Thresh" : PAT,
                     "RE_Thresh" : RET,
@@ -874,16 +882,14 @@ if __name__ == '__main__':
                     "Marker_errBefore" : beforeRE,
                     "Tie_ptsAfter" : afterRE_Tie,
                     "Marker_errAfter" : afterRE}
-                        
-        imgCount_df = imgCount_df.append(temp_dict, ignore_index = True)
-        
+
         doc.save()
         print("Finished Processing" + psxfile)
         
     
         # Save the results to a CSV file
         with open(imgCount_outfile, 'a', newline='') as csv_file:
-            fieldnames = ['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total', 'Img_Quality_Avg', 'RU_Thresh', 'PA_Thresh','RE_Thresh',
+            fieldnames = ['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total', 'Img_Quality_Avg', "ProcessTime", 'RU_Thresh', 'PA_Thresh','RE_Thresh',
                           'Tie_ptsBefore','Marker_errBefore','Tie_ptsAfter','Marker_errAfter']
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=',')
             if i == 0:
