@@ -287,16 +287,39 @@ def AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def BuildDenseCloud(chunk, Quality, FilterMode):
+    print("Build Dense Cloud")
     try:
-        chunk.buildDenseCloud(quality=Quality, 
-                              filter= FilterMode, 
-                              keep_depth=False, 
-                              reuse_depth=False)
+        ### Metashape 1.6.2    
+        task = PhotoScan.Tasks.BuildDepthMaps()
+        task.downscale = Quality
+        task.filter_mode = FilterMode
+        task.reuse_depth = True
+        task.subdivide_task = True
+        task.apply(chunk)
+
+        # chunk.buildDenseCloud(point_colors=True)
+        task = PhotoScan.Tasks.BuildDenseCloud()
+        task.max_neighbors = 100
+        task.subdivide_task = True
+        task.point_colors = True
+        task.apply(chunk)
+
+        
     except:
-        chunk.buildDepthMaps(quality=Quality,
-                             filter=FilterMode,
-                             reuse_depth=False)
-        chunk.buildDenseCloud(point_colors=True)
+        # Not sure this is even needed anymore
+        # Metashape 1.6.2
+        task = PhotoScan.Tasks.BuildDepthMaps()
+        task.downscale = Quality
+        task.filter_mode = FilterMode
+        task.reuse_depth = False
+        task.subdivide_task = True
+        task.apply(chunk)
+        
+        task = PhotoScan.Tasks.BuildDenseCloud()
+        task.max_neighbors = 100
+        task.subdivide_task = True
+        task.point_colors = True
+        task.apply(chunk)
 
 #####----------------------------------------------------------------------------------------------------------------------#######  
 def ClassifyGround(chunk, Max_Angle, Cell_Size):
@@ -308,55 +331,75 @@ def ClassifyGround(chunk, Max_Angle, Cell_Size):
 #####----------------------------------------------------------------------------------------------------------------------#######  
 def BuildModel(chunk):
     try:
-        chunk.buildModel(surface=Surface, 
+        chunk.buildModel(surface_type=Surface, 
                          interpolation=PhotoScan.Interpolation.EnabledInterpolation, 
                          face_count=PhotoScan.FaceCount.HighFaceCount, 
-                         source=SurfaceSource, 
+                         source_data=SurfaceSource, 
                          vertex_colors=True)
     except:
-        chunk.buildModel(surface=Surface, 
+        chunk.buildModel(surface_type=Surface, 
                          interpolation=PhotoScan.Interpolation.EnabledInterpolation, 
                          face_count=PhotoScan.FaceCount.HighFaceCount, 
-                         source=PhotoScan.DataSource.DenseCloudData, 
+                         source_data=PhotoScan.DataSource.DenseCloudData, 
                          vertex_colors=True)
 
 #####----------------------------------------------------------------------------------------------------------------------#######  
 def BuildDSM(chunk):
     try:
-        chunk.buildDem(source=PhotoScan.DataSource.DenseCloudData, 
+        chunk.buildDem(source_data=PhotoScan.DataSource.DenseCloudData, 
                        interpolation=PhotoScan.Interpolation.EnabledInterpolation, 
                        projection = chunk.crs)
     except:
-        chunk.buildDem(source=PhotoScan.DataSource.DenseCloudData, 
+        chunk.buildDem(source_data=PhotoScan.DataSource.DenseCloudData, 
                        interpolation=PhotoScan.Interpolation.EnabledInterpolation)
         
 #####----------------------------------------------------------------------------------------------------------------------#######
 def BuildDEM(chunk):
     try:
-        chunk.buildDem(source=PhotoScan.DataSource.DenseCloudData, 
-                       interpolation=PhotoScan.Interpolation.EnabledInterpolation, 
-                       projection = chunk.crs,
-                       classes=[PhotoScan.PointClass.Ground])
+        # If the point cloud is classified
+        chunk.buildDem(source_data=PhotoScan.DataSource.DenseCloudData, 
+                        interpolation=PhotoScan.Interpolation.EnabledInterpolation,
+                        classes=[PhotoScan.PointClass.Ground])
+        # task = PhotoScan.Tasks.BuildDem()
+        # task.source_data = PhotoScan.DataSource.DenseCloudData
+        # task.interpolation = PhotoScan.Interpolation.Extrapolated
+        # task.projection = chunk.crs
+        # task.classes = [PhotoScan.PointClass.Ground]
+        # # task.network_distribute = True
+        # task.apply(chunk)
+
     except:
-        chunk.buildDem(source=PhotoScan.DataSource.DenseCloudData, 
-                       interpolation=PhotoScan.Interpolation.EnabledInterpolation, 
-                       projection = chunk.crs)
+        # If the point cloud is not classified
+        chunk.buildDem(source_data=PhotoScan.DataSource.DenseCloudData, 
+                        interpolation=PhotoScan.Interpolation.EnabledInterpolation)
+        # task = PhotoScan.Tasks.BuildDem()
+        # task.source_data = PhotoScan.DataSource.DenseCloudData
+        # task.interpolation = PhotoScan.Interpolation.Extrapolated
+        # task.projection = chunk.crs
+        # # task.network_distribute = True
+        # task.apply(chunk)
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def BuildMosaic(chunk, BlendingMode, save_ortho):
     try:
-        chunk.buildOrthomosaic(surface=PhotoScan.DataSource.ElevationData, 
-                               blending=BlendingMode, 
-                               color_correction=Color_correction, 
-                               fill_holes=True, 
-                               projection= chunk.crs)
+        # Metashape 1.5
+        chunk.buildOrthomosaic(surface_data=PhotoScan.DataSource.ElevationData, 
+                                blending_mode=BlendingMode,
+                                fill_holes=True, 
+                                projection= chunk.crs)
+        # task = PhotoScan.Tasks.BuildOrthomosaic()
+        # task.surface_data = PhotoScan.DataSource.ElevationData
+        # # task.resolution = 0.05
+        # task.fill_holes = True
+        # task.projection = chunk.crs
+        # task.blending_mode = PhotoScan.BlendingMode.MosaicBlending
+        # task.subdivide_task = True
+        # task.apply(chunk)
     except:
-        if Color_correction:
-            chunk.calibrateColors(source_data=PhotoScan.DataSource.ModelData, color_balance=Color_balance)
-        chunk.buildOrthomosaic(surface=PhotoScan.DataSource.ElevationData, 
-                               blending=BlendingMode,  
-                               fill_holes=True, 
-                               projection= chunk.crs)
+        # Metashape 1.6.2 got rid of the 'projection' tag
+        chunk.buildOrthomosaic(surface_data=PhotoScan.DataSource.ElevationData, 
+                                blending_mode=BlendingMode,
+                                fill_holes=True)
     doc.save()
     
 
@@ -382,44 +425,42 @@ def add_altitude(chunk, flightHeightFile):
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def StandardWorkflow(doc, chunk, saveOrtho, **kwargs):
-    doc.save()
-    
-    # Skip the chunk if it is the DEM chunk we created
-    if '_DEM' in chunk.label:
-        pass
-    else:
-        if chunk.dense_cloud is None:
-            BuildDenseCloud(chunk, kwargs['Quality'], kwargs['FilterMode'])
-            doc.save()
-            
-            if chunk.label == "Medium2":
-                #Classification
-                ClassifyGround(chunk, kwargs['Max_Angle'], kwargs['Cell_Size'])
-                doc.save()
-            
-        # #Build Mesh
-        # if chunk.model is None:
-        #     BuildModel(chunk)
-        # doc.save()
-        
-        # #Build DSM
-        # if chunk.elevation is None:
-        #     BuildDSM(chunk)
-        
-        #Build DEM
-        if chunk.elevation is None:
-            BuildDEM(chunk)
-            doc.save()
-        
-        #Create OrthoMosaic
-        if chunk.orthomosaic is None:
-            BuildMosaic(chunk, kwargs['BlendingMode'], saveOrtho)
+
+    if chunk.dense_cloud is None:
+        BuildDenseCloud(chunk, kwargs['Quality'], kwargs['FilterMode'])
         doc.save()
         
-        # Export Orthomosaic
-        if os.path.exists(saveOrtho):
-            os.remove(saveOrtho)
-        chunk.exportOrthomosaic(saveOrtho, image_format = PhotoScan.ImageFormatTIFF)
+    # # Export point cloud
+    # task = PhotoScan.Tasks.ExportPoints()
+    # task.data_source = PhotoScan.DataSource.DenseCloudData
+    # task.format = PhotoScan.PointsFormat.PointsFormatLAS
+    # task.export_colors = True
+    # task.coordinates = chunk.crs
+    # task.path = "\\export\\point_cloud.las"
+        
+    # #Build Mesh
+    # if chunk.model is None:
+    #     BuildModel(chunk)
+    # doc.save()
+    
+    # #Build DSM
+    # if chunk.elevation is None:
+    #     BuildDSM(chunk)
+    
+    #Build DEM
+    if chunk.elevation is None:
+        BuildDEM(chunk)
+        doc.save()
+    
+    #Create OrthoMosaic
+    if chunk.orthomosaic is None:
+        BuildMosaic(chunk, kwargs['BlendingMode'], saveOrtho)
+    doc.save()
+    
+    # Export Orthomosaic
+    if os.path.exists(saveOrtho):
+        os.remove(saveOrtho)
+    chunk.exportOrthomosaic(saveOrtho, image_format = PhotoScan.ImageFormatTIFF)
         
     return
 
@@ -606,6 +647,19 @@ def markerError(chunk):
     ErrTot = str(round(ErrorTotal,2))
     return ErrTot
 
+#####----------------------------------------------------------------------------------------------------------------------#######
+def secondsToText(secs):
+    secs = round(secs)
+    days = secs//86400
+    hours = (secs - days*86400)//3600
+    minutes = (secs - days*86400 - hours*3600)//60
+    seconds = secs - days*86400 - hours*3600 - minutes*60
+    result = ("{0} day{1} ".format(days, "s" if days!=1 else "") if days else "") + \
+    ("{0} hour{1} ".format(hours, "s" if hours!=1 else "") if hours else "") + \
+    ("{0} minute{1} ".format(minutes, "s" if minutes!=1 else "") if minutes else "") + \
+    ("{0} second{1}".format(seconds, "s" if seconds!=1 else "") if seconds else "")
+    return result
+
 #####------------------------------------------------------------------------------#####
 #####---------------------------- MAIN --------------------------------------------#####
 #####------------------------------------------------------------------------------#####
@@ -618,8 +672,8 @@ if __name__ == '__main__':
     # Accuracy = PhotoScan.Accuracy.MediumAccuracy
     #  Metashape 1.6 Accuracy Variables
     ALIGN = {"Highest":  0,
-               "High":   1,
-              # "High":   8,
+              "High":   1,
+               # "High":   8,
               "Medium": 2,
               "Low":    4,
               "Lowest": 8}
@@ -632,8 +686,8 @@ if __name__ == '__main__':
     
     # Metashape 1.6 Quality Variables
     DENSE = {"Ultra":  1,
-               "High":   2,
-              # "High":   16,
+             "High":   2,
+               # "High":   16,
               "Medium": 4,
               "Low":    8,
               "Lowest": 16}
@@ -660,11 +714,7 @@ if __name__ == '__main__':
     # Variable for building orthomosaic
     # Since 1.4.0, users can choose performing color correction (vignetting) and balance separately.
     # Blending: AverageBlending, MosaicBlending, MinBlending, MaxBlending, DisabledBlending
-    # Color_correction: True, False
-    # Color_balance: True, False
     BlendingMode = PhotoScan.BlendingMode.MosaicBlending
-    Color_correction = False
-    Color_balance = False
     
     # Set the project projection
     # PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
@@ -861,10 +911,11 @@ if __name__ == '__main__':
                                             Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
                                             BlendingMode=BlendingMode)
                         except:
-                            print("Could not finish processing " + str(chunk.label) + "dataset.")
+                            print("Could not finish processing " + str(chunk.label) + " dataset.")
         
         end = time.time()
-        processTime = end - start
+        procTime = end - start
+        processTime = secondsToText(procTime)
         temp_dict= {"Date": ProcessDate,
                     "Accuracy" : accuracyLvl,
                     "Key_Limit" : Key_Limit,
