@@ -460,7 +460,14 @@ def StandardWorkflow(doc, chunk, saveOrtho, **kwargs):
     # Export Orthomosaic
     if os.path.exists(saveOrtho):
         os.remove(saveOrtho)
-    chunk.exportOrthomosaic(saveOrtho, image_format = PhotoScan.ImageFormatTIFF)
+    try:
+        #Metashape 1.5
+        chunk.exportOrthomosaic(saveOrtho, image_format = PhotoScan.ImageFormatTIFF)
+    except:
+        #Metashape 1.6
+        compression = PhotoScan.ImageCompression()
+        compression.tiff_big = True
+        chunk.exportRaster(path = saveOrtho, source_data=PhotoScan.OrthomosaicData, image_compression = compression)
         
     return
 
