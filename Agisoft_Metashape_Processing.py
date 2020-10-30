@@ -46,6 +46,7 @@ except ImportError:
 # import split_in_chunks_python
 import csv
 import time
+# import xml.etree.ElementTree as ET
 
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
@@ -98,12 +99,58 @@ def getPhotoList(root_path, photoList, img_type):
 
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
+def img_qualityControl(chunk, QualityCriteria):
+        # Tell Agisoft to calculate each images quality
+    if chunk.cameras[0].meta['Image/Quality'] is None:
+        try:
+            chunk.estimateImageQuality() # Metashape 1.5
+        except:
+            chunk.analyzePhotos() # Metashape 1.6
+    
+    # Disable cameras that are lower than the defined QualityCritera
+    print(len(chunk.cameras))
+    for camera in chunk.cameras:
+        if float(camera.meta["Image/Quality"]) < QualityCriteria:
+            camera.enabled = False
+    x = 0
+
+    for camera in chunk.cameras:
+    	if not camera.enabled:
+    		x = x + 1
+    		pass
+    	else:
+    		pass
+    		
+    print ('Disabled images: %d ' % x)
+    
+    ## For Multispectral camera
+    # for band in [band for camera in chunk.cameras for band in camera.planes]:
+    #     if float(band.meta['Image/Quality']) < QualityCriteria:
+    #         band.enabled = False
+        
+    # Calculate the average remaining image quality
+    images_quality = 0
+    i = 0
+    if len(chunk.cameras) > 0:
+        for camera in chunk.cameras:
+            if camera.enabled:
+                images_quality = images_quality + float(camera.meta['Image/Quality'])
+                i += 1
+    
+    if i > 0:
+        images_quality_avg = images_quality / i
+    else:
+        images_quality_avg = 0
+    
+    return images_quality_avg, x
+
+
+#####-----------------------------------------------------------------------------------------------------------------------------------#######
 # Mark GCP target locations in images
 def mark_Images(chunk, GCPpath, path, gcp_crs, gcp_ref_acc):
     # Load the GCP Locations
     try:
         chunk.importReference(GCPpath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyz",create_markers=True, crs=gcp_crs)
-    #, crs=PhotoScan.CoordinateSystem("EPSG::32611") 
     #, threshold = 3
     except:
         print("GCP Coordinate File Not Found.")
@@ -194,27 +241,51 @@ def AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie
                 camera.reference.location = PhotoScan.CoordinateSystem.transform(camera.reference.location, img_crs, new_crs)
     
     # Filter out poor qualtiy Images
-    tempIQavg = 0
     if QualityFilter:
-        i = 1
-        tempIQ = 1
+        # ImgQualAvg, lowQualImg = img_qualityControl(chunk, QualityFilter)
+                # Tell Agisoft to calculate each images quality
         if chunk.cameras[0].meta['Image/Quality'] is None:
             try:
                 chunk.estimateImageQuality() # Metashape 1.5
             except:
                 chunk.analyzePhotos() # Metashape 1.6
+        
+        # Disable cameras that are lower than the defined QualityCritera
+        print(len(chunk.cameras))
         for camera in chunk.cameras:
             if float(camera.meta["Image/Quality"]) < QualityCriteria:
                 camera.enabled = False
-                tempIQ = tempIQ + float(camera.meta["Image/Quality"])
-                i += 1
+        
+        lowQualImg = 0
+        for camera in chunk.cameras:
+        	if not camera.enabled:
+        		lowQualImg += 1
+        		pass
+        	else:
+        		pass
+        		
+        print ('Disabled images: %d ' % lowQualImg)
+        
         ## For Multispectral camera
         # for band in [band for camera in chunk.cameras for band in camera.planes]:
         #     if float(band.meta['Image/Quality']) < QualityCriteria:
         #         band.enabled = False
+            
+        # Calculate the average remaining image quality
+        images_quality = 0
+        i = 0
+        if len(chunk.cameras) > 0:
+            for camera in chunk.cameras:
+                if camera.enabled:
+                    images_quality = images_quality + float(camera.meta['Image/Quality'])
+                    i += 1
         
-        tempIQavg = tempIQ / i
-    
+        if i > 0:
+            ImgQualAvg = images_quality / i
+        else:
+            ImgQualAvg = 0
+        
+            
     # Get list of images in chunk
     originalImgList = list()
     for camera in chunk.cameras:
@@ -238,6 +309,7 @@ def AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie
                       filter_mask=False, 
                       keypoint_limit=Key_Limit, 
                       tiepoint_limit=Tie_Limit)
+        
     chunk.alignCameras()
     
     # Realign non-aligned images
@@ -282,44 +354,58 @@ def AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie
     originalImgList = None
     # originalCount = None
     # successAlignment = False
-    return successAlignment, originalCount, align2, tempIQavg
+    return successAlignment, originalCount, align2, ImgQualAvg, lowQualImg
     
 
 #####----------------------------------------------------------------------------------------------------------------------#######
-def BuildDenseCloud(chunk, Quality, FilterMode):
+def BuildDenseCloud(chunk, Quality, FilterMode, savePointCloud, savePtCloudFN):
+    
     print("Build Dense Cloud")
     try:
-        ### Metashape 1.6.2    
-        task = PhotoScan.Tasks.BuildDepthMaps()
-        task.downscale = Quality
-        task.filter_mode = FilterMode
-        task.reuse_depth = True
-        task.subdivide_task = True
-        task.apply(chunk)
-
-        # chunk.buildDenseCloud(point_colors=True)
-        task = PhotoScan.Tasks.BuildDenseCloud()
-        task.max_neighbors = 100
-        task.subdivide_task = True
-        task.point_colors = True
-        task.apply(chunk)
+        ### Metashape 1.5
+        if chunk.dense_cloud is None:
+            chunk.buildDepthMaps(quality=Quality,
+                         filter=FilterMode,
+                         reuse_depth=False)
+            chunk.buildDenseCloud(point_colors=True)
+        
+        # Export point cloud
+        if savePointCloud == 1:
+            task = PhotoScan.Tasks.ExportPoints()
+            task.source_data = PhotoScan.DataSource.DenseCloudData
+            task.format = PhotoScan.PointsFormat.PointsFormatLAS
+            task.save_colors = True
+            task.crs = PhotoScan.CoordinateSystem("EPSG::32611")
+            task.path = savePtCloudFN
+            task.apply(chunk)
 
         
     except:
-        # Not sure this is even needed anymore
         # Metashape 1.6.2
-        task = PhotoScan.Tasks.BuildDepthMaps()
-        task.downscale = Quality
-        task.filter_mode = FilterMode
-        task.reuse_depth = False
-        task.subdivide_task = True
-        task.apply(chunk)
+        if chunk.dense_cloud is None:
+            task = PhotoScan.Tasks.BuildDepthMaps()
+            task.downscale = Quality
+            task.filter_mode = FilterMode
+            task.reuse_depth = False
+            task.subdivide_task = True
+            task.apply(chunk)
+            
+            task = PhotoScan.Tasks.BuildDenseCloud()
+            task.max_neighbors = 100
+            task.subdivide_task = True
+            task.point_colors = True
+            task.apply(chunk)
         
-        task = PhotoScan.Tasks.BuildDenseCloud()
-        task.max_neighbors = 100
-        task.subdivide_task = True
-        task.point_colors = True
-        task.apply(chunk)
+        # Export point cloud
+        if savePointCloud == 1:
+            task = PhotoScan.Tasks.ExportPoints()
+            task.source_data = PhotoScan.DataSource.DenseCloudData
+            task.format = PhotoScan.PointsFormat.PointsFormatLAS
+            task.save_colors = True
+            task.crs = PhotoScan.CoordinateSystem("EPSG::32611")
+            task.path = savePtCloudFN
+            task.apply(chunk)
+            
 
 #####----------------------------------------------------------------------------------------------------------------------#######  
 def ClassifyGround(chunk, Max_Angle, Cell_Size):
@@ -380,13 +466,31 @@ def BuildDEM(chunk):
         # task.apply(chunk)
 
 #####----------------------------------------------------------------------------------------------------------------------#######
-def BuildMosaic(chunk, BlendingMode, save_ortho):
+def BuildMosaic(chunk, BlendingMode, saveOrthoFN, save_ortho):
     try:
         # Metashape 1.5
         chunk.buildOrthomosaic(surface_data=PhotoScan.DataSource.ElevationData, 
                                 blending_mode=BlendingMode,
                                 fill_holes=True, 
                                 projection= chunk.crs)
+        
+        if save_ortho == 1:
+            # Export Orthomosaic
+            if os.path.exists(saveOrtho):
+                os.remove(saveOrtho)
+            try:
+                #Metashape 1.5
+                chunk.exportOrthomosaic(saveOrthoFN, image_format = PhotoScan.ImageFormatTIFF)
+            except:
+                #Metashape 1.6
+                compression = PhotoScan.ImageCompression()
+                compression.tiff_big = True
+                chunk.exportRaster(path = saveOrthoFN, source_data=PhotoScan.OrthomosaicData, image_compression = compression)
+    except:
+        # Metashape 1.6.2 got rid of the 'projection' tag
+        chunk.buildOrthomosaic(surface_data=PhotoScan.DataSource.ElevationData, 
+                                blending_mode=BlendingMode,
+                                fill_holes=True)
         # task = PhotoScan.Tasks.BuildOrthomosaic()
         # task.surface_data = PhotoScan.DataSource.ElevationData
         # # task.resolution = 0.05
@@ -395,12 +499,21 @@ def BuildMosaic(chunk, BlendingMode, save_ortho):
         # task.blending_mode = PhotoScan.BlendingMode.MosaicBlending
         # task.subdivide_task = True
         # task.apply(chunk)
-    except:
-        # Metashape 1.6.2 got rid of the 'projection' tag
-        chunk.buildOrthomosaic(surface_data=PhotoScan.DataSource.ElevationData, 
-                                blending_mode=BlendingMode,
-                                fill_holes=True)
-    doc.save()
+    
+        if save_ortho == 1:
+            # Export Orthomosaic
+            if os.path.exists(saveOrtho):
+                os.remove(saveOrtho)
+            try:
+                #Metashape 1.5
+                chunk.exportOrthomosaic(saveOrthoFN, image_format = PhotoScan.ImageFormatTIFF)
+            except:
+                #Metashape 1.6
+                compression = PhotoScan.ImageCompression()
+                compression.tiff_big = True
+                chunk.exportRaster(path = saveOrthoFN, source_data=PhotoScan.OrthomosaicData, image_compression = compression)
+        
+    return
     
 
 #####----------------------------------------------------------------------------------------------------------------------#######
@@ -423,53 +536,6 @@ def add_altitude(chunk, flightHeightFile):
             coord = camera.reference.location
             camera.reference.location = PhotoScan.Vector([coord.x, coord.y, alt])
 
-#####----------------------------------------------------------------------------------------------------------------------#######
-def StandardWorkflow(doc, chunk, saveOrtho, **kwargs):
-
-    if chunk.dense_cloud is None:
-        BuildDenseCloud(chunk, kwargs['Quality'], kwargs['FilterMode'])
-        doc.save()
-        
-    # # Export point cloud
-    # task = PhotoScan.Tasks.ExportPoints()
-    # task.data_source = PhotoScan.DataSource.DenseCloudData
-    # task.format = PhotoScan.PointsFormat.PointsFormatLAS
-    # task.export_colors = True
-    # task.coordinates = chunk.crs
-    # task.path = "\\export\\point_cloud.las"
-        
-    # #Build Mesh
-    # if chunk.model is None:
-    #     BuildModel(chunk)
-    # doc.save()
-    
-    # #Build DSM
-    # if chunk.elevation is None:
-    #     BuildDSM(chunk)
-    
-    #Build DEM
-    if chunk.elevation is None:
-        BuildDEM(chunk)
-        doc.save()
-    
-    #Create OrthoMosaic
-    if chunk.orthomosaic is None:
-        BuildMosaic(chunk, kwargs['BlendingMode'], saveOrtho)
-    doc.save()
-    
-    # Export Orthomosaic
-    if os.path.exists(saveOrtho):
-        os.remove(saveOrtho)
-    try:
-        #Metashape 1.5
-        chunk.exportOrthomosaic(saveOrtho, image_format = PhotoScan.ImageFormatTIFF)
-    except:
-        #Metashape 1.6
-        compression = PhotoScan.ImageCompression()
-        compression.tiff_big = True
-        chunk.exportRaster(path = saveOrtho, source_data=PhotoScan.OrthomosaicData, image_compression = compression)
-        
-    return
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def GetResolution(chunk):
@@ -479,19 +545,19 @@ def GetResolution(chunk):
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def ReduceError_RU(chunk, init_threshold=10):
-    minRemainingPercent = 50 #percentage of left points
-    points = chunk.point_cloud.points
-    minRemainingPoints = int(len(points) * (minRemainingPercent/100))
-    
     # This is used to reduce error based on reconstruction uncertainty
+    # Min percentage of points to be remaining after RU
+    minRemainingPercent = 50
     tie_points = chunk.point_cloud
+    temp_points = tie_points.points
+    minRemainingPoints = int(len(temp_points) * (minRemainingPercent/100))
     fltr = PhotoScan.PointCloud.Filter()
     fltr.init(chunk, PhotoScan.PointCloud.Filter.ReconstructionUncertainty)
     threshold = init_threshold
     print("reconstruction uncertainty")
     while fltr.max_value > threshold:
         fltr.selectPoints(threshold)
-        nselected = len([p for p in tie_points.points if p.selected])
+        nselected = len([p for p in temp_points if p.selected])
         # If too many points are selected for removal, clear the selection and up the threshold
         if nselected >= minRemainingPoints and threshold <= 50: # Max threshold of 50 is arbitrary
             fltr.resetSelection()
@@ -504,7 +570,7 @@ def ReduceError_RU(chunk, init_threshold=10):
         else:
             break
         
-    UnselectPointMatch(chunk)
+    # UnselectPointMatch(chunk)
     print('Delete {} tie point(s)'.format(nselected))
     tie_points.removeSelectedPoints()
     chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
@@ -540,7 +606,7 @@ def ReduceError_PA(chunk, init_threshold=2.0):
         else:
             break
         
-    UnselectPointMatch(chunk)
+    # UnselectPointMatch(chunk)
     print('Delete {} tie point(s)'.format(nselected))
     tie_points.removeSelectedPoints()
     chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
@@ -559,7 +625,7 @@ def ReduceError_PA(chunk, init_threshold=2.0):
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def ReduceError_RE(chunk, init_threshold=0.3):
-    print("repeojection error")
+    print("reprojection error")
     # This is used to reduce error based on repeojection error
     minRemainingPercent = 80 #percentage of left points
     tie_points = chunk.point_cloud
@@ -581,8 +647,8 @@ def ReduceError_RE(chunk, init_threshold=0.3):
             break
         else:
             break
-        
-    UnselectPointMatch(chunk)
+    
+    # UnselectPointMatch(chunk)
     print('Delete {} tie point(s)'.format(nselected))
     tie_points.removeSelectedPoints()
     chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=True, fit_b2=True, 
@@ -594,6 +660,7 @@ def ReduceError_RE(chunk, init_threshold=0.3):
 
 #####----------------------------------------------------------------------------------------------------------------------#######
 def UnselectPointMatch(chunk, *band):
+    # Unselect points that have fewer than 3 projections
     point_cloud = chunk.point_cloud
     points = point_cloud.points
     point_proj = point_cloud.projections
@@ -644,7 +711,7 @@ def markerError(chunk):
            total = error.norm()      #error punto
            SumCuadrado = (total) ** 2    #cuadrado del error
            listaErrores += [SumCuadrado]      #lista de los errores
-       
+           
     #print(listaErrores)
     
     suma = sum(listaErrores)
@@ -667,19 +734,25 @@ def secondsToText(secs):
     ("{0} second{1}".format(seconds, "s" if seconds!=1 else "") if seconds else "")
     return result
 
+
 #####------------------------------------------------------------------------------#####
-#####---------------------------- MAIN --------------------------------------------#####
+#####------------------------------- MAIN -----------------------------------------#####
 #####------------------------------------------------------------------------------#####
 if __name__ == '__main__':
     print("Starting Program...")
     
     #####-----------------------------------Agisoft User variables---------------------------------------------------------------------#######
-    # Variables for photo alignment
-    # Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
-    # Accuracy = PhotoScan.Accuracy.MediumAccuracy
-    #  Metashape 1.6 Accuracy Variables
+    ## Variables for photo alignment
+    ## Accuracy: HighestAccuracy, HighAccuracy, MediumAccuracy, LowAccuracy, LowestAccuracy
+    ## Metashape 1.5 Accuracy Variables
+    # ALIGN = {"Highest":  PhotoScan.Accuracy.HighestAccuracy,
+    #         "High":   PhotoScan.Accuracy.HighAccuracy,
+    #       "Medium": PhotoScan.Accuracy.MediumAccuracy,
+    #       "Low":    PhotoScan.Accuracy.LowAccuracy,
+    #       "Lowest": PhotoScan.Accuracy.LowestAccuracy}
+    ##  Metashape 1.6 Accuracy Variables
     ALIGN = {"Highest":  0,
-              "High":   1,
+                "High":   1,
                # "High":   8,
               "Medium": 2,
               "Low":    4,
@@ -687,19 +760,23 @@ if __name__ == '__main__':
     
     # Variables for building dense cloud
     # Quality: UltraQuality, HighQuality, MediumQuality, LowQuality, LowestQuality
-    # Filter: AggressiveFiltering, ModerateFiltering, MildFiltering, NoFiltering
-    # Quality = PhotoScan.Quality.LowestQuality
-    # FilterMode = PhotoScan.FilterMode.MildFiltering
+    # # Metashape 1.5 Quality Variables
+    # DENSE = {"Ultra":  PhotoScan.Quality.UltraQuality,
+    #        "High":   PhotoScan.Quality.HighQuality,
+    #       "Medium": PhotoScan.Quality.MediumQuality,
+    #       "Low":    PhotoScan.Quality.LowQuality,
+    #       "Lowest": PhotoScan.Quality.LowestQuality}
     
     # Metashape 1.6 Quality Variables
     DENSE = {"Ultra":  1,
-             "High":   2,
-               # "High":   16,
+               "High":   2,
+              # "High":   16,
               "Medium": 4,
               "Low":    8,
               "Lowest": 16}
     
-    # Metashape 1.6 Filtering Variables
+    # Filter: AggressiveFiltering, ModerateFiltering, MildFiltering, NoFiltering
+    # Metashape 1.5 and 1.6 Filtering Variables
     FILTERING = {"None":  PhotoScan.NoFiltering,
                  "Mild":  PhotoScan.MildFiltering,
                  "Moderate": PhotoScan.ModerateFiltering,
@@ -707,8 +784,6 @@ if __name__ == '__main__':
     
     
     # Variables for dense cloud ground point classification
-    # Maximum distance is usually twice of image resolution
-    # Which will be calculated later
     Max_Angle = 13
     Cell_Size = 10
     
@@ -719,35 +794,47 @@ if __name__ == '__main__':
     SurfaceSource = PhotoScan.DataSource.DepthMapsData
     
     # Variable for building orthomosaic
-    # Since 1.4.0, users can choose performing color correction (vignetting) and balance separately.
     # Blending: AverageBlending, MosaicBlending, MinBlending, MaxBlending, DisabledBlending
     BlendingMode = PhotoScan.BlendingMode.MosaicBlending
     
     # Set the project projection
     # PhotoScan.CoordinateSystem("EPSG::32611") #UTM11N
     # PhotoScan.CoordinateSystem("EPSG::4326")  #WGS84
-    GCP_crs = PhotoScan.CoordinateSystem("EPSG::4326") #Coordinate System of the GCPs
+    GCP_crs = PhotoScan.CoordinateSystem("EPSG::32611") #Coordinate System of the GCPs
     img_crs = PhotoScan.CoordinateSystem("EPSG::4326") #Coordinate System of Image geotags
-    new_crs = PhotoScan.CoordinateSystem("EPSG::4326") #Desired Output Coordinate system
-    gcp_ref_acc = 0.1 #Estimated accuracy of GCP GPS coordinates in meters
+    new_crs = PhotoScan.CoordinateSystem("EPSG::32611") #Desired Output Coordinate system
+    
+    #Estimated accuracy of GCP GPS coordinates in meters
+    gcp_ref_acc = 0.1
     
     # Variables for image quality filter
     # QualityFilter: True, False
-    # QualityCriteria: float number range from 0 to 1 (default 0.5)
+    # QualityCriteria: float number range from 0 to 1
     QualityFilter = True
     QualityCriteria = 0.5
-    
-    
+        
+        
     #####--------------------------------------------------Processing---------------------------------------------------------------#######
     # Define Folders to Process
-    mainFold = "/SNOWDATA/SnowDrones-Processing/"
+    # mainFold = "/SNOWDATA/SnowDrones-Processing/"
+    mainFold = "/scratch/thomasvanderweide/SnowDrones/"
     Loc = "LDP"
     locFold = mainFold + Loc + "/"
-    # Where to save the CSV File
-    imgCount_outfile = locFold + "/imgCount_df.csv"
-            
+    # Where to save the CSV File with processing information
+    imgCount_outfile = locFold + "/imgCount_df_top.csv"
+    # Identifyer for the project  ex) LDP_10-19-2020_projID
+    projID = "_HighTop.psx"
+    # Point Cloud file name Id ex) LDP_10-19-2020_High_<ptCloudID>
+    ptCloudID = "_PtCloudTest_10-30_Top.las"
+    # orthoMosaic file name Id ex) LDP_10-19-2020_High_<orthoID>
+    orthoID = "_Ortho_10-30_Top.tif"
+    # Read in the GCP RTK Target GPS coordinates
+    # GCP_coordFN = locFold + Loc + "_Agisoft.csv"
+    GCP_coordFN = locFold + "LDP_GCPs_Topcon.csv"
+    
+    # Define the Dates to process
     AllDates = [dI for dI in sorted(os.listdir(locFold)) if os.path.isdir(os.path.join(locFold,dI))]
-    AllDates = AllDates[0:7]
+    AllDates = AllDates[0:13]
     # AllDates = ["02-04-2020"]
     # DataType = ["RGB", "Thermal"]
     DataType = ["RGB"]
@@ -768,20 +855,29 @@ if __name__ == '__main__':
     FilterMode = FILTERING[filterLevel]
     
     
-    # Switches for Processing steps
+    #####------   Switches for Processing steps   ---------#####
     loadPhotos = 1
     markImages = 1 # Must have loadPhotos = 1
-    processImgs = 1
-    alignPhotos = 1 # Must have processImgs = 1
-    reduceError = 1 # Must have alignPhotos = 1
-    createDEM = 1
-    classifyGround = 0
-    createDEM2 = 0
-    createOrtho = 1
     
+    processImgs = 1
+    alignPhotos = 1 
+    reduceError = 1 # Must have alignPhotos = 1
+    writeCSV = 1  # Must have alignPhotos = 1, otherwise all these values will be zero
+    
+    # Must have processImgs = 1 for any of the below
+    processPointCloud = 1
+    savePointCloud = 1 # Must have processPointCloud == 1
+    buildMesh = 0
+    buildDSM = 0
+    createDEM = 1
+    buildOrthomosaic = 1
+    saveOrtho = 1
+    
+    # classifyGround = 0
+    # createDEM2 = 0
     
     # Iter through all folders
-    i = 0 # Used to save the header in the CSV file
+    i = 1 # Used to save the header in the CSV file
     for ProcessDate in AllDates:
         start = time.time()
         # Clear dictionary items
@@ -793,6 +889,7 @@ if __name__ == '__main__':
                         "Filter" : 0,
                         "Aligned" : 0,
                         "Total" : 0,
+                        "lowQualityImg" : 0,
                         "Img_Quality_Avg" : 0,
                         "ProcessTime" : 0,
                         "RU_Thresh" : 0,
@@ -806,19 +903,26 @@ if __name__ == '__main__':
         print(ProcessDate)
         dateFolder =  locFold + ProcessDate + "/"
         #Where to save the metashape Project file
-        saveprojName = Loc + "_" +  ProcessDate + "_High.psx"
+        saveprojName = Loc + "_" +  ProcessDate + projID
         psxfile = dateFolder + saveprojName
         
         # Clear the Console
         # PhotoScan.app.console.clear()
-        # construct the document class
-        # doc = PhotoScan.Document(psxfile)
-        doc = PhotoScan.app.document
-        doc.save( psxfile )
         
+        # Open new Metashape document
+        doc = PhotoScan.app.document
+        # Try to open an existing project file
+        try: 
+            doc.open( psxfile, read_only=False, ignore_lock=True )
+        # Save to a new project file
+        except: 
+            doc.save( psxfile )
+            
+        
+        # List of existing chunks for each project
+        chunk_list = doc.chunks
+            
         if loadPhotos == 1:
-            # List of existing chunks for each project
-            chunk_list = doc.chunks
             
             # Create a chunk for each image type
             for imgType in DataType:
@@ -839,10 +943,8 @@ if __name__ == '__main__':
                         fold = fold.replace('\\', '/')
                         print(fold)
                         
-                        ### Photo List ###
-                        # photoList = []
+                        ### Photo List
                         getPhotoList(fold, photoList, imgExt)
-                                
                                 
                     # Create imgType chunk
                     if photoList:
@@ -851,20 +953,17 @@ if __name__ == '__main__':
                         chunk.addPhotos(photoList)
                         doc.save()
                 
-                        if markImages == 1:                            
-                            # Read in the GCP RTK Target GPS coordinates
-                            GCP_coordFN = locFold + Loc + "_Agisoft.csv"
-    
-                            # Read in the GCP locations on the Images
-                            typeFolder =  locFold + ProcessDate + "/RGB/"
-                            TargetFN = typeFolder + "GCPwithImageLocations.csv"
-                            
-                            filelist = [GCP_coordFN, TargetFN]
-                            print(filelist)
-                            if all([os.path.isfile(f) for f in filelist]):
-                                mark_Images(chunk, GCP_coordFN, TargetFN, GCP_crs, gcp_ref_acc)
-                            else:
-                                print("One of the GCP_coord csv files does not exist.")
+                if markImages == 1:                            
+                    # Read in the GCP locations on the Images
+                    typeFolder =  locFold + ProcessDate + "/RGB/"
+                    TargetFN = typeFolder + "GCPwithImageLocations.csv"
+                    
+                    filelist = [GCP_coordFN, TargetFN]
+                    print(filelist)
+                    if all([os.path.isfile(f) for f in filelist]):
+                        mark_Images(chunk, GCP_coordFN, TargetFN, GCP_crs, gcp_ref_acc)
+                    else:
+                        print("One of the GCP_coord csv files does not exist.")
                         
             # Remove any empty chunks in doc
             for chunk in list(doc.chunks):
@@ -880,7 +979,7 @@ if __name__ == '__main__':
                 chunk.crs = img_crs
                 # Align Photo only if it is not done yet
                 if alignPhotos == 1:
-                    successfulAlignment, tot_Img, align_Img, ImgQual = AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria, img_crs, new_crs)
+                    successfulAlignment, tot_Img, align_Img, ImgQual, lowQualImg = AlignPhoto(locFold, ProcessDate, typeFolder, chunk, Accuracy, Key_Limit, Tie_Limit, QualityFilter, QualityCriteria, img_crs, new_crs)
                     print("Successful Alignment")
                     doc.save()
                     if reduceError == 1:
@@ -903,57 +1002,79 @@ if __name__ == '__main__':
                 doc.save()
                 # Do the rest when there's tie point
                 if successfulAlignment:
+                    # if there are over 1000 RGB images:
+                    #     splitInChunks(doc, chunk)
+                    if processPointCloud == 1:
+                        savePtCloudFN = locFold + ProcessDate + "/RGB/" + Loc + "_" + ProcessDate + "_" + str(chunk.label) + ptCloudID
+                        BuildDenseCloud(chunk, Quality, FilterMode, savePointCloud, savePtCloudFN)
+                        doc.save()
+                    
+                    if buildMesh == 1:
+                        #Build Mesh
+                        if chunk.model is None:
+                            BuildModel(chunk)
+                        doc.save()
+                        
+                    if buildDSM == 1:
+                        # #Build DSM
+                        if chunk.elevation is None:
+                            BuildDSM(chunk)
+                            doc.save()
+                        
                     if createDEM == 1:
-                        # Define the ortho file name and save location
-                        saveOrthoLoc =  locFold + ProcessDate + "/RGB/"
-                        saveOrthoName = Loc + "_" + ProcessDate + "_" + str(chunk.label) + "_Ortho.tif"
-                        saveOrtho = saveOrthoLoc + saveOrthoName
-            
-                        # if there are over 1000 RGB images:
-                        #     splitInChunks(doc, chunk)
-
-                        try:
-                            StandardWorkflow(doc, chunk, saveOrtho,
-                                            Quality=Quality, FilterMode=FilterMode, 
-                                            Max_Angle=Max_Angle, Cell_Size=Cell_Size, 
-                                            BlendingMode=BlendingMode)
-                        except:
-                            print("Could not finish processing " + str(chunk.label) + " dataset.")
+                        # Build DEM
+                        if chunk.elevation is None:
+                            BuildDEM(chunk)
+                            doc.save()
+                    
+                    if buildOrthomosaic == 1:
+                        #Create OrthoMosaic
+                        if chunk.orthomosaic is None:
+                            orthoFN = locFold + ProcessDate + "/RGB/" + Loc + "_" + ProcessDate + "_" + str(chunk.label) + orthoID
+                            BuildMosaic(chunk, BlendingMode, orthoFN, saveOrtho)
+                        doc.save()
         
         end = time.time()
-        procTime = end - start
-        processTime = secondsToText(procTime)
-        temp_dict= {"Date": ProcessDate,
-                    "Accuracy" : accuracyLvl,
-                    "Key_Limit" : Key_Limit,
-                    "Tie_Limit" : Tie_Limit,
-                    "Quality" : qualityLevel,
-                    "Filter" : filterLevel,
-                    "Aligned" : align_Img,
-                    "Total" : tot_Img,
-                    "Img_Quality_Avg" : ImgQual,
-                    "ProcessTime" : processTime,
-                    "RU_Thresh" : RUT,
-                    "PA_Thresh" : PAT,
-                    "RE_Thresh" : RET,
-                    "Tie_ptsBefore" : beforeRE_Tie,
-                    "Marker_errBefore" : beforeRE,
-                    "Tie_ptsAfter" : afterRE_Tie,
-                    "Marker_errAfter" : afterRE}
 
         doc.save()
         print("Finished Processing" + psxfile)
         
-    
         # Save the results to a CSV file
-        with open(imgCount_outfile, 'a', newline='') as csv_file:
-            fieldnames = ['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total', 'Img_Quality_Avg', "ProcessTime", 'RU_Thresh', 'PA_Thresh','RE_Thresh',
-                          'Tie_ptsBefore','Marker_errBefore','Tie_ptsAfter','Marker_errAfter']
-            writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=',')
-            if i == 0:
-                writer.writeheader()
-                i += 1
-            writer.writerow(temp_dict)
+        if writeCSV == 1:
+            procTime = end - start
+            processTime = secondsToText(procTime)
+            temp_dict= {"Date": ProcessDate,
+                        "Accuracy" : accuracyLvl,
+                        "Key_Limit" : Key_Limit,
+                        "Tie_Limit" : Tie_Limit,
+                        "Quality" : qualityLevel,
+                        "Filter" : filterLevel,
+                        "Aligned" : align_Img,
+                        "Total" : tot_Img,
+                        "lowQualityImg" : lowQualImg,
+                        "Img_Quality_Avg" : ImgQual,
+                        "ProcessTime" : processTime,
+                        "RU_Thresh" : RUT,
+                        "PA_Thresh" : PAT,
+                        "RE_Thresh" : RET,
+                        "Tie_ptsBefore" : beforeRE_Tie,
+                        "Marker_errBefore" : beforeRE,
+                        "Tie_ptsAfter" : afterRE_Tie,
+                        "Marker_errAfter" : afterRE}
+        
+            with open(imgCount_outfile, 'a', newline='') as csv_file:
+                fieldnames = ['Date', 'Accuracy', 'Key_Limit', 'Tie_Limit','Quality','Filter','Aligned','Total','lowQualityImg', 'Img_Quality_Avg', "ProcessTime", 'RU_Thresh', 'PA_Thresh','RE_Thresh',
+                              'Tie_ptsBefore','Marker_errBefore','Tie_ptsAfter','Marker_errAfter']
+                writer = csv.DictWriter(csv_file, fieldnames=fieldnames, delimiter=',')
+                # If this is a new file, write the header
+                if i == 0:
+                    csv_dict = [row for row in csv.DictReader(csv_file)]
+                    if len(csv_dict) == 0:
+                        print('csv file is empty')
+                        writer.writeheader()
+                    i += 1
+                    
+                writer.writerow(temp_dict)
         
         # Clear the doc before processing next day
         doc.clear()
@@ -964,5 +1085,33 @@ if __name__ == '__main__':
     # app = PhotoScan.Application()
     # app.quit()
 
+    
+# ## Attempt to import a polygon to define the bounding box (NOT WORKING)
+## https://www.agisoft.com/forum/index.php?topic=8985.0
+#     kmlFile = "/scratch/thomasvanderweide/SnowDrones/LDP/LDP.kml"
+#     tree = ET.parse(kmlFile)
+#     root = tree.getroot()
+#     nmsp = '{http://www.opengis.net/kml/2.2}'
+    
+#     for pm in tree.iterfind('.//{0}Placemark'.format(nmsp)):
+#         print(pm.find('{0}name'.format(nmsp)).text)
 
+#         for ls in pm.iterfind('{0}Polygon/{0}outerBoundaryIs/{0}LinearRing/{0}coordinates'.format(nmsp)):
+#             strArr = ls.text.strip().split(" ")
+            
+#     corners = ["c1", "c2","c3","c4"]
+    
 
+#     newList = []
+#     for line in strArr:
+#         line = line.split(",")
+#         newList.append(line)
+
+#     cornerPts = dict(zip(corners, newList))
+    
+#     for marker_name in cornerPts:
+#         marker = chunk.addMarker()
+#         marker.label = marker_name
+#         marker.reference.location = PhotoScan.Vector((float(cornerPts[marker_name][0]),float(cornerPts[marker_name][1]),0))
+    
+    
