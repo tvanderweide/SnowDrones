@@ -1,5 +1,5 @@
 """
-Script to save point clicked on image to CSV file able to be imported by Agisoft
+Script to save point clicked on image to CSV file with pixel values for later analysis
 author: Thomas Van Der Weide
 """
 

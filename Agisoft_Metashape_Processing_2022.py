@@ -44,6 +44,11 @@ import time
 import statistics
 import math
 
+##Commands to run things in console
+# import Metashape as PhotoScan
+# doc = PhotoScan.app.document
+# chunk = doc.chunk
+# chunk.label
 
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
 ## Find images of .ext type and load into project
@@ -58,7 +63,7 @@ def loadImgs(chunk, root_path, img_type):
         photoList = []
         pattern = '.' + img_type + '$'
         
-        for fold in sorted(glob.iglob(root_path)):
+        for fold in sorted(glob.iglob(root_path + "*/REDToolBox*/REDtoolbox*/")):
             fold = fold.replace('\\', '/')
                             
             for root, dirs, files in os.walk(fold):
@@ -74,7 +79,7 @@ def loadImgs(chunk, root_path, img_type):
         else:
             imgCount = "N/A"
         
-    # Set the defined camera accuracy
+    # # Set the defined camera accuracy
     for camera in chunk.cameras:
         camera.reference.accuracy = PhotoScan.Vector([cam_ref_acc, cam_ref_acc, cam_ref_acc])
     
@@ -237,22 +242,20 @@ def BBCameraLoc(chunk):
     
 #####-----------------------------------------------------------------------------------------------------------------------------------#######
 # Mark GCP target locations in images
-def loadGCP(chunk, gcpPath, gcp_CoordSysFlag): 
+def loadGCP(chunk, gcpPath, dirPath): 
     # Remove any existing markers if markerRenew flag is == 1
     if markerRenew:
         chunk.remove(chunk.markers)
     
-    # markerCount = len(chunk.markers)
-    # if markerCount == 0:
+    # How many columns are in the CSV?
+    with open(gcpPath, 'r') as csv:
+        first_line = csv.readline()
+    ncol = first_line.count(',') + 1
+        
     print("Loading reference targets location...")
     # Load the GCP Locations
-    if gcp_CoordSysFlag:
-        # If the GCP crs is not the same as the camera CRS then convert the camera CRS
-        for camera in chunk.cameras:
-            if camera.reference.location:
-                camera.reference.location = PhotoScan.CoordinateSystem.transform(camera.reference.location, img_crs, gcp_crs_UTM)
-        chunk.crs = gcp_crs_UTM
-        chunk.importReference(gcpPath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyz", create_markers=True, crs=gcp_crs_UTM)
+    if ncol == 7:
+        chunk.importReference(gcpPath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyzXYZ", create_markers=True, crs=gcp_crs)
     else:
         chunk.importReference(gcpPath, format = PhotoScan.ReferenceFormatCSV, delimiter=",", columns="nxyz", create_markers=True, crs=gcp_crs)
     
@@ -261,24 +264,26 @@ def loadGCP(chunk, gcpPath, gcp_CoordSysFlag):
     ## Disable Header 'GCP' and validation targets
     for marker in chunk.markers:
         # Set the Marker Accuracy
-        marker.reference.accuracy = PhotoScan.Vector([gcp_ref_acc,gcp_ref_acc,gcp_ref_acc])
+        if ncol == 7:
+            pass
+        else:
+            marker.reference.accuracy = PhotoScan.Vector([gcp_ref_acc,gcp_ref_acc,gcp_ref_acc])
             
         if marker.label == 'Location':
              chunk.remove(marker)
+        elif marker.label == 'Name':
+             chunk.remove(marker)
         # LDP GCP
-        elif marker.label == 'VGCP0':
-             marker.reference.enabled = False
-        elif marker.label == 'VGCP1':
-             marker.reference.enabled = False
-        #Bogus VGCP
-        elif marker.label == 'VGCP':
-             marker.reference.enabled = False
-        elif marker.label == 'VGCP4':
-             marker.reference.enabled = False
+        elif marker.label.startswith('VGCP'):
+            marker.reference.enabled = False
+        elif marker.label.startswith('rad'):
+            marker.reference.enabled = False
     
     # Load markers and existing image XY target locations
-    markerFN_csv = gcpPath.rpartition("/")[0] + "/RGB/" + markerFN
-    if os.path.isfile(markerFN_csv):
+    markerFN_csv = dirPath + markerFN
+    if markerFN == "False":
+        pass
+    elif os.path.isfile(markerFN_csv):
         mark_Images(chunk, markerFN_csv)
     else:
         print("############ Could not find the Image Marker File. ##############")
@@ -447,11 +452,6 @@ def AlignPhoto(chunk):
                         sensor.rolling_shutter = True
             except:
                 print("Error applying rolling shutter correction")
-            
-            # chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
-            #                       fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
-            #                       fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
-            #                       adaptive_fitting=False, tiepoint_covariance=False)
             
             #Remove unused variables
             realign_list = None
@@ -710,9 +710,9 @@ def ReduceError_RU(chunk, RU_thresh, minRemainingPercent):
     print('Delete {} tie point(s)'.format(nselected))
     tie_points.removeSelectedPoints()
     chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
-                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
-                          fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
-                          adaptive_fitting=False, tiepoint_covariance=False)
+                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=True, 
+                          fit_p1=True, fit_p2=True, fit_p3=True, fit_p4=True, 
+                          adaptive_fitting=True, tiepoint_covariance=False)
 
 
     return threshold
@@ -749,9 +749,9 @@ def ReduceError_PA(chunk, PA_thresh, minRemainingPercent):
     print('Delete {} tie point(s)'.format(nselected))
     tie_points.removeSelectedPoints()
     chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
-                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
-                          fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
-                          adaptive_fitting=False, tiepoint_covariance=False)
+                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=True, 
+                          fit_p1=True, fit_p2=True, fit_p3=True, fit_p4=True, 
+                          adaptive_fitting=True, tiepoint_covariance=False)
     
     # # This is to tighten tie point accuracy value
     # chunk.tiepoint_accuracy = 0.1
@@ -791,9 +791,9 @@ def ReduceError_RE(chunk, RE_thresh, minRemainingPercent):
     print('Delete {} tie point(s)'.format(nselected))
     tie_points.removeSelectedPoints()
     chunk.optimizeCameras(fit_f=True, fit_cx=True, fit_cy=True, fit_b1=False, fit_b2=False, 
-                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=False, 
-                          fit_p1=True, fit_p2=True, fit_p3=False, fit_p4=False, 
-                          adaptive_fitting=False, tiepoint_covariance=False)
+                          fit_k1=True, fit_k2=True, fit_k3=True, fit_k4=True, 
+                          fit_p1=True, fit_p2=True, fit_p3=True, fit_p4=True, 
+                          adaptive_fitting=True, tiepoint_covariance=False)
 
     return threshold
 
@@ -1011,7 +1011,7 @@ def secondsToText(secs):
 def processImgSet(doc, chunk, dirPath, saveFold, gcpPath, csv_outfile, markerCSV, cameraCSV):
     start = time.time()
     # Define or reset dictionary items
-    align_Img = tot_Img = lowQualImg = ImgQual = markerCount = markersUsed = processTime = gcp_CoordSysFlag = 0
+    align_Img = tot_Img = lowQualImg = ImgQual = markerCount = markersUsed = processTime = 0
     RUT = PAT = RET = beforeRE_Tie = beforeRE = afterRE_Tie = afterRE = ErrorTotal = calf = calx = caly = 0
     total_error = [0,0,0] #marker X,Y,Z errors
     
@@ -1024,21 +1024,9 @@ def processImgSet(doc, chunk, dirPath, saveFold, gcpPath, csv_outfile, markerCSV
     
     ## Automatic Target Detection
     # markerCount = auto_mark_Images(chunk, gcpPath)
-    
-    # Find if the gcps exist
-    # Do this first so we can set the CRS
-    gcpPath_csv = gcpPath + ".csv"
-    gcpPath_csv_Top = gcpPath + "_Top.csv"
-    if os.path.isfile(gcpPath_csv):
-        gcp_CoordSysFlag = 0
-    elif os.path.isfile(gcpPath_csv_Top):
-        gcp_CoordSysFlag = 1
-        
+           
     # Load GCPs
-    if gcp_CoordSysFlag:
-        markerCount = loadGCP(chunk, gcpPath_csv_Top, gcp_CoordSysFlag)
-    else:
-        markerCount = loadGCP(chunk, gcpPath_csv, gcp_CoordSysFlag)
+    markerCount = loadGCP(chunk, gcpPath, dirPath)
     doc.save()
     
     # Reduce Error through gradual selection if enabled
@@ -1131,58 +1119,57 @@ def processImgSet(doc, chunk, dirPath, saveFold, gcpPath, csv_outfile, markerCSV
 
 ####--------------------------------------------------------------------------------------------------------------------####
 def iterFold():
+    savePath = saveDir + saveID + "/"   #ex <saveDir> + /2021/ + <saveID> + /
+    directory = os.path.dirname(savePath)
+    if not os.path.exists(directory):
+        os.makedirs(directory)
+    
+    # Where to save the CSV File
+    csv_outfile = savePath + saveID + ".csv"
+    # Where to save the PSX File
+    psxfile = savePath + saveID + ".psx"
+    
+    # Open new Metashape document
+    doc = PhotoScan.Document()
+    # Try to open an existing project file
+    try: 
+        doc.open( psxfile, read_only=False, ignore_lock=True )
+    # Save to a new project file
+    except: 
+        doc.save( psxfile )
+            
     # Go through folder structure
     for foldPath in sorted(glob.iglob(mainFold + '*/')):
         foldPath = foldPath.replace('\\', '/') #ex .../2021/
-        saveName = foldPath.rpartition("/")[0].rpartition("/")[2] #ex 2021
-        savePath = saveDir + saveName + "/" + saveID + "/"   #ex <saveDir> + /2021/ + <saveID> + /
-        directory = os.path.dirname(savePath)
-        if not os.path.exists(directory):
-            os.makedirs(directory)
+        chunkName = foldPath.rpartition("/")[0].rpartition("/")[2] #ex 2021-03-23
+        cNameExists = 0
+        # Check if the chunk already exists
+        if len(doc.chunks):
+            for item in list(doc.chunks):
+                if item.label == chunkName:
+                    chunk = item
+                    cNameExists = 1
+                    break
+        if cNameExists == 1:
+            pass
+        else:
+            chunk = doc.addChunk()
+            chunk.label = chunkName
+            #Define the project coordinate system
+            chunk.crs = out_crs
         
-        # Where to save the CSV File
-        csv_outfile = savePath + saveID + ".csv"
-        # Where to save the PSX File
-        psxfile = savePath + saveID + ".psx"
-        
-        # Open new Metashape document
-        doc = PhotoScan.Document()
-        # Try to open an existing project file
-        try: 
-            doc.open( psxfile, read_only=False, ignore_lock=True )
-        # Save to a new project file
-        except: 
-            doc.save( psxfile )
-        
-        # Process sub-directories as chunks in project
-        for dirPath in sorted(glob.iglob(foldPath + '*/')):
-            dirPath = dirPath.replace('\\', '/') #ex .../2021/2021-03-23/
-            chunkName = dirPath.rpartition("/")[0].rpartition("/")[2] #ex 2021-03-23
-            cNameExists = 0
-            # Check if the chunk already exists
-            if len(doc.chunks):
-                for item in list(doc.chunks):
-                    if item.label == chunkName:
-                        chunk = item
-                        cNameExists = 1
-                        break
-            if cNameExists == 1:
-                pass
-            else:
-                chunk = doc.addChunk()
-                chunk.label = chunkName
-                #Define the project coordinate system
-                chunk.crs = out_crs
-            
             # Save marker CSV file location
             markerCSV = savePath + saveID + "_MarkerErrors_" + chunkName + ".csv"
             cameraCSV = savePath + saveID + "_CameraErrors_" + chunkName + ".csv"
             
-            #GCP File
-            gcpPath = dirPath + "GCPs_corrected"
+            #GCP File.
+            gcpPath = glob.glob(foldPath + "RS2/rinex*/*_Agisoft.csv")[0]
+            gcpPath = gcpPath.replace('\\', '/')
             
             # Process the data
-            processImgSet(doc, chunk, dirPath, savePath, gcpPath, csv_outfile, markerCSV, cameraCSV)
+            dirPath = foldPath + 'P4RTK/'
+            processImgSet(doc, chunk, dirPath, savePath, gcpPath, csv_outfile, markerCSV, cameraCSV)           
+
 
     return
 
@@ -1243,13 +1230,13 @@ if __name__ == '__main__':
     
     ## Set GCP and camera accuracies in meters
     gcp_ref_acc = 0.05
-    cam_ref_acc = 30.0
+    cam_ref_acc = 2.5
     
     ## Image quality filter
     # QualityFilter: True, False
     # QualityCriteria: float number range from 0 to 1
     QualityFilter = True
-    QualityCriteria = 0.6
+    QualityCriteria = 0.7
     
     ## Parameters for Image Alignment
     # Accuracy: Highest, High, Medium, Low, Lowest
@@ -1258,7 +1245,7 @@ if __name__ == '__main__':
     Key_Limit = 40000
     Tie_Limit = 4000
     # Enable rolling shutter correction
-    camRollingShutter = True
+    camRollingShutter = False
     
     ## Parameters for the Dense Cloud
     # Quality: Ultra, High, Medium, Low, Lowest
@@ -1283,27 +1270,27 @@ if __name__ == '__main__':
     BlendingMode = PhotoScan.BlendingMode.MosaicBlending
     
     ## Reduce Error Parameters
-    RU_thresh = 5  #Start at this threshold, go up by 1 until it reaches RU_minRemainingPercent of remaining points OR RU_thresh = 40
-    PA_thresh = 1   #Start at this threshold, go up by 0.25 until it reaches PA_minRemainingPercent of remaining points OR  PA_thresh = 6
+    RU_thresh = 1  #Start at this threshold, go up by 1 until it reaches RU_minRemainingPercent of remaining points OR RU_thresh = 40
+    PA_thresh = 0.5   #Start at this threshold, go up by 0.25 until it reaches PA_minRemainingPercent of remaining points OR  PA_thresh = 6
     RE_thresh = 0.2 #Start at this threshold, go up by 0.05 until it reaches RE_minRemainingPercent of remaining points OR RE_thresh = 2
     # Minimum percentage of points remaining after each RE step
     RU_minRemainingPercent = 70
     PA_minRemainingPercent = 70
     RE_minRemainingPercent = 90
     # Flag to uncheck cameras before gradual selection to reduce error
-    uncheckCams = 1
+    uncheckCams = 0
     # After gradual selection remove markers that have fewer than 3 projections
     removeMarkersFlag = 0
 
     
     ## Flags for what steps to run
-    saveID = "HighQuality_Correctedv6" # Used to name the project file (e.g. <saveID>.psx)
+    saveID = "HighQual2022" # Used to name the project file (e.g. <saveID>.psx)
     markerRenew = 0          # Deletes existing markers, used to load updated markers
-    gradualSelectionFlag = 0 # Set to 0 if gradual selection of the point cloud was already run to skip this step
+    gradualSelectionFlag = 1 # Set to 0 if gradual selection of the point cloud was already run to skip this step
     customBB = 1             # Set a custom bounding box around camera locations
-    markerErrOutput = 1      # Save a CSV file with details on individual marker accuracies
+    markerErrOutput = 0      # Save a CSV file with details on individual marker accuracies
     cameraErrOutput = 0      # Save a CSV file with details on individual camera location accuracies
-    buildDenseFlag = 1       # Build Dense Cloud
+    buildDenseFlag = 0       # Build Dense Cloud
     savePointCloud = 0       # Save a point cloud
     buildMeshFlag = 0        # Build Mesh
     buildDEMFlag = 0         # Build DEM
@@ -1314,15 +1301,16 @@ if __name__ == '__main__':
     
     ## Folder Name and Location
     # header folder
-    siteLoc = "LDP"
-    mainFold = "/SNOWDATA/SnowDrones/" + siteLoc + "/"
+    mainFold = "/SNOWDATA/SnowDrones-Processing/2022_Data/SurveyDates/Process/"
+    # mainFold = "E:/SnowDrones_HDrive/2022_Data/SurveyDates/"
     imgExt = ".JPG"
     
     # Define where to save the photoscan project and related files (e.g. ortho)
-    saveDir = "/SNOWDATA/SnowDrones_2021_Processing/" + siteLoc + "/"
+    saveDir = "/scratch/thomasvanderweide/SnowDrones/2022/"
+    # saveDir = "E:/SnowDrones_HDrive/2022_Data/SurveyDates/Output/"
     
-    # Define existing marker file name
-    markerFN = "GCPwithImageLocations_new.csv"
+    # Define existing marker file name if the flags have already been set for images
+    markerFN = "GCP_Img_XY_loc.csv" # Set to False if there is no file to load
     
     # Run the script over all folders in mainFold
     iterFold()
