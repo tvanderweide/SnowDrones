@@ -5,17 +5,19 @@ Update MagnaProbe Survey points with PPK position output from corrected .pos fil
 Inputs:
     Survey .csv file and .pos file
     
+    
 Notes:
-    If it seems off it could be due to the time-offset (line 41) between UTC and GPST
+    User only needs to change input files on lines 27-29 and uncomment line 69 to write the corrected csv file
+    If it seems off it could be due to the time-offset (line 41) between MagnaProbe Timestamp and GPST
     
 @author: Thomas Van Der Weide
-12/27/2023
+Boise State University
+4/29/2024
 """
 
 #! /usr/bin/env python
 
 import pandas as pd
-#import numpy as np
 from datetime import timedelta
 import math
 import matplotlib.pyplot as plt
@@ -24,24 +26,26 @@ import seaborn as sns
 
 def process():
     #Define CSV, POS, and output file locations
-    survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-16_Utq/MagnaProbe/MagnaProbe.csv"
-    ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-16_Utq/GPSDATA/MagnaProbe/SEPT1050_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
-    out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-16_Utq/MagnaProbe/MagnaProbe_corrected.csv'
-    plotTitle = '2024-04-16_Utq'
+    survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/2024-04-14_MagnaProbe_UAF.csv"
+    ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/GPSDATA/reachM2_SDP_raw_202404142145_UBX/reachM2_SDP_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
+    out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/2024-04-14_MagnaProbe_UAF_corrected.csv'
+    plotTitle = '2024-04-14_Utq'
     #Load the Files
     print('Loading: %s' % survey_pts_csv_fn)
     survey_pts = pd.read_csv(survey_pts_csv_fn, header = 0)
     header = 'Date GPST latitude(deg) longitude(deg)  height(m)   Q  ns   sdn(m)   sde(m)   sdu(m)  sdne(m)  sdeu(m)  sdun(m) age(s)  ratio'
     print('Loading: %s' % ppk_pos_fn)
     ppk_pos = pd.read_csv(ppk_pos_fn, comment='%', delim_whitespace=True, names=header.split(), parse_dates=[[0,1]])
-    ## Extract the UTC time from the GPS NMEA String and format this as a GPST DateTime
-    time_regex = r'(\d{6}\.\d{2})'
-    survey_pts['rmcutc'] = survey_pts['RMCstring'].str.extract(time_regex) # Extract the time element using str.extract()
-    survey_pts['Combined'] = survey_pts['rmcutcdate'].astype(str) + survey_pts['rmcutc'].astype(str)
-    survey_pts['DateTime'] = pd.to_datetime(survey_pts['Combined'], format='%d%m%y%H%M%S.%f') - timedelta(seconds=18) # + timedelta(hours=9) 
-    ## Format the POS file
-    ppk_pos['DateTime'] = pd.to_datetime(ppk_pos['Date_GPST'], format='%Y-%m-%d %H:%M:%S.%f').dt.round('100ms')
-    outDF = pd.merge(survey_pts, ppk_pos, on='DateTime', how='inner')
+    
+    ### Format the dataFrames
+    ## Round the MagnaProbe timestamp to match nearest 5Hz rate
+    ## (Incorrectly) Assuming that MagnaProbe Realtime() 'TIMESTAMP' is syncronized with the GPS NMEA string
+    ## This can be adjusted based on how far off the MagnaProbe clock is from actual UTC. The 18 second timedelta is for UTC -> GPST and should stay
+    survey_pts['TIMESTAMP2'] = pd.to_datetime(survey_pts['TIMESTAMP'], format='%Y-%m-%d %H:%M:%S.%f') + timedelta(hours=9) - timedelta(seconds=18)
+    survey_pts['DateTime'] = survey_pts['TIMESTAMP2'].dt.round('200ms')
+    ## Format the Emlid pos file and convert from GPST to UTC
+    ppk_pos['DateTime'] = pd.to_datetime(ppk_pos['Date_GPST'], format='%Y-%m-%d %H:%M:%S.%f') 
+    outDF = pd.merge(survey_pts, ppk_pos, on='DateTime', how='left')
     
     ##Format Output to match original magnaProbe format
     #Convert DD to DDM and isolate the decimal portion
@@ -59,14 +63,15 @@ def process():
     outDF['seconds'] = [d.time().second for d in outDF['DateTime']]
     outDF['microseconds'] = [d.time().microsecond for d in outDF['DateTime']]
     #Create df to output
-    out_df = outDF[['TIMESTAMP','RECORD','Counter', 'DepthCm', 'BattVolts','latitude_a','latitude_b','longitude_a','longitude_b', 'Q','ns', 'ggahdop', 'height(m)', 'DepthVolts','latitudeDDDDD','longitudeDDDDD', 'month', 'dayofmonth', 'hourofday', 'minutes', 'seconds', 'microseconds', 'latitude(deg)', 'longitude(deg)', 'sdn(m)','sde(m)','sdu(m)','sdne(m)', 'GGAstring','RMCstring']]
-    out_df = out_df.rename(columns={'Q': 'fix_quality', 'ns': 'nmbr_satellites','ggahdop':'HDOP','height(m)':'altitudeB', 'GGAstring':'GGAstringOriginal','RMCstring':'RMCstringOriginal'})
-    
+    out_df = outDF[['TIMESTAMP','RECORD','Counter', 'DepthCm', 'BattVolts','latitude_a','latitude_b','longitude_a','longitude_b', 'Q','ns', 'height(m)', 'DepthVolts','latitudeDDDDD','longitudeDDDDD', 'month', 'dayofmonth', 'hourofday', 'minutes', 'seconds', 'microseconds', 'latitude(deg)', 'longitude(deg)', 'sdn(m)','sde(m)','sdu(m)','sdne(m)']]
+    out_df = out_df.rename(columns={'Q': 'fix_quality', 'ns': 'nmbr_satellites','height(m)':'altitudeB'})
+
     ##Write out new file
-    #print("Writing out: %s" % out_csv_fn)
-    #out_df.to_csv(out_csv_fn, index=False)
-    #out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
+    print("Writing out: %s" % out_csv_fn)
+    out_df.to_csv(out_csv_fn, index=False)
+    # out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
     return plotTitle, ppk_pos, survey_pts, outDF
+
 
 def plot(plotTitle, outDF):
     print("Entering plot func")
@@ -99,8 +104,8 @@ def plot(plotTitle, outDF):
 def HeightPlot(plotTitle, ppk_pos, survey_pts):
     ppk_pos["smoothed_height"] = ppk_pos['height(m)'].rolling(window=5, min_periods=1).mean()
     ## Remove extraneous points
-    # filtered_df = survey_pts.iloc[:]
-    filtered_df = survey_pts.iloc[16:-12]
+    filtered_df = survey_pts.iloc[:]
+    # filtered_df = survey_pts.iloc[16:-12]
     # filtered_df = survey_pts.iloc[100:155]
     filtered_df = filtered_df.reset_index(drop=True)
     #filtered_df = filtered_df[(filtered_df['DepthCm'] >= 0.03) & (filtered_df['DepthCm'] <= 118)]
@@ -114,7 +119,7 @@ def HeightPlot(plotTitle, ppk_pos, survey_pts):
     
     matching_times = filtered_df["DateTime"].iloc[2:]
     matching_heights = ppk_pos.loc[ppk_pos['DateTime'].isin(matching_times), ['DateTime', 'height(m)']]
-
+    
     ## Plot the GPS height data and SnowDepth vs Time
     fig, ax1 = plt.subplots(figsize=(10, 6))
 
@@ -142,6 +147,8 @@ def HeightPlot(plotTitle, ppk_pos, survey_pts):
         elif ppk_pos['Q'].iloc[i] == 1:
             ax1.axvspan(ppk_pos['DateTime'].iloc[i], ppk_pos['DateTime'].iloc[i+1], ymin=0, ymax=0.05, color='green', alpha=0.1)
     
+    
+    
     # Plot Details
     # Add a text box with the number of rows in 'filtered_df'
     num_rows = len(filtered_df)
@@ -153,10 +160,7 @@ def HeightPlot(plotTitle, ppk_pos, survey_pts):
     plt.grid(True)
     plt.show()
     
-    
 if __name__ == "__main__":
     plotTitle, ppk_pos, survey_pts, outDF = process()
-    # plot(plotTitle, outDF)
+    plot(plotTitle, outDF)
     HeightPlot(plotTitle, ppk_pos, survey_pts)
-
-
