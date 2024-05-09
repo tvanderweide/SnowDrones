@@ -13,21 +13,24 @@ Notes:
 """
 
 #! /usr/bin/env python
-
 import pandas as pd
-#import numpy as np
+import numpy as np
 from datetime import timedelta
 import math
 import matplotlib.pyplot as plt
 import seaborn as sns
+from geopy.distance import geodesic
+import matplotlib.gridspec as gridspec
+from matplotlib.lines import Line2D
+
 
 
 def process():
     #Define CSV, POS, and output file locations
-    survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-16_Utq/MagnaProbe/MagnaProbe.csv"
-    ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-16_Utq/GPSDATA/MagnaProbe/SEPT1050_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
-    out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-16_Utq/MagnaProbe/MagnaProbe_corrected.csv'
-    plotTitle = '2024-04-16_Utq'
+    survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/PlumberPoint_Shore2Tent.csv"
+    ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/GPSDATA/MagnaProbe/SEPT1050_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
+    out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/PlumberPoint_Shore2Tent_corrected2.csv'
+    plotTitle = '2024-04-14_Utq'
     #Load the Files
     print('Loading: %s' % survey_pts_csv_fn)
     survey_pts = pd.read_csv(survey_pts_csv_fn, header = 0)
@@ -68,33 +71,6 @@ def process():
     #out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
     return plotTitle, ppk_pos, survey_pts, outDF
 
-def plot(plotTitle, outDF):
-    print("Entering plot func")
-    # create boxplot with a different y scale for different rows
-    #bins = [0,0.25,1,max(outDF['sde(m)'])]
-    labels = ["Fix","Float","Single"]
-    #outDF['value_group'] = pd.cut(outDF['Lateral RMS'],bins = bins,labels=labels)
-    groups = outDF.groupby('Q')
-    fig, axes = plt.subplots(1, 3)
-    i = 0
-    for ID, group in groups:
-        ax = sns.boxplot(y=3*group['sdne(m)'].abs(), ax=axes.flatten()[i])
-        ax.set_xlabel(labels[i])
-        ax.set_ylim(3*group['sdne(m)'].abs().min()*0.85, 3*group['sdne(m)'].abs().max()*1.15)
-        if i == 0:
-            ax.set_ylabel('3*SDNE or Location Uncertainty (m)')
-        else:
-            ax.set_ylabel('')
-        ax.text(0.1, 0.942, "N= " + str(len(group)), transform=ax.transAxes, size=10, weight='bold')
-        ax.text(0.1, 0.9, "Mean= " + str(3*round(group['sdne(m)'].abs().mean() ,2)) + " m", transform=ax.transAxes, size=10, weight='bold')
-        i += 1
-    fig.suptitle(plotTitle + ' MagnaProbe GPS Location Precision', fontweight ='bold') 
-    fig.text(0.5, 0.02, 'GPS Location Solution', ha='center', va='center')
-    plt.subplots_adjust(left=0.1,
-                    right=0.9,
-                    wspace=0.4, 
-                    hspace=0.4)
-    plt.show()
 
 def HeightPlot(plotTitle, ppk_pos, survey_pts):
     ppk_pos["smoothed_height"] = ppk_pos['height(m)'].rolling(window=5, min_periods=1).mean()
@@ -154,9 +130,162 @@ def HeightPlot(plotTitle, ppk_pos, survey_pts):
     plt.show()
     
     
+def heightComp(plotTitle, outDF):
+    outDF['HeightDiff(m)'] = outDF['ggaaltitude'] - outDF['height(m)']
+    # Set up a grid that has row heights in proportion to desired plot sizes
+    fig = plt.figure(figsize=(10, 12))
+    gs = gridspec.GridSpec(5, 3, figure=fig)
+    
+    # Create the first subplot on the top 2/3 of the figure
+    ax1 = fig.add_subplot(gs[0:2, :])  # Spans first two rows
+    
+    # Plot 'ggaaltitude'
+    ax1.plot(outDF['DateTime'], outDF['ggaaltitude'], label='GNGGA Altitude', marker='o', linestyle='-')
+    
+    # Plot 'height(m)'
+    ax1.plot(outDF['DateTime'], outDF['height(m)'], label='Processed Height (m)', marker='x', linestyle='--')
+    
+    # Plot shaded regions based on 'Q' values
+    for i in range(len(outDF)-1):
+        if outDF['Q'].iloc[i] == 5:
+            ax1.axvspan(outDF['DateTime'].iloc[i], outDF['DateTime'].iloc[i+1], ymin=0, ymax=0.05, color='red', alpha=0.1)
+        elif outDF['Q'].iloc[i] == 2:
+            ax1.axvspan(outDF['DateTime'].iloc[i], outDF['DateTime'].iloc[i+1], ymin=0, ymax=0.05, color='yellow', alpha=0.1)
+        elif outDF['Q'].iloc[i] == 1:
+            ax1.axvspan(outDF['DateTime'].iloc[i], outDF['DateTime'].iloc[i+1], ymin=0, ymax=0.05, color='green', alpha=0.1)
+    
+    # Adding titles and labels to the first subplot
+    ax1.set_title(plotTitle + ' Original vs Processed Elevation over Time')
+    ax1.set_xlabel('DateTime')
+    ax1.set_ylabel('Altitude/Height')
+    ax1.legend(loc='upper left')
+    
+    # Create the second subplot on the bottom 1/3 of the figure
+    ax2 = fig.add_subplot(gs[2, :])  # Third row only
+    
+    # Plot height difference
+    ax2.plot(outDF['DateTime'], outDF['HeightDiff(m)'], color='red', label='Height Diff (m)')
+    ax2.set_ylabel('Height Diff (m)', color='red')
+    ax2.set_ylabel('DateTime')
+    ax2.tick_params(axis='y', labelcolor='red')
+    ax2.set_title('Difference between GNGGA and Processed Altitudes')
+    ax2.legend(loc='upper right')
+    # Annotate number of entries and mean value on ax2
+    num_entries = len(outDF)
+    mean_value = outDF['HeightDiff(m)'].mean()
+    annotation_text = f'n = {num_entries},\nMean = {mean_value:.2f} m'
+    ax2.annotate(annotation_text, xy=(0.05, 0.95), xycoords='axes fraction', fontsize=10,
+                 horizontalalignment='left', verticalalignment='top', color='black')
+    
+    # Location Accuracy Plot - fix the subplot indices
+    ax4 = fig.add_subplot(gs[3, :])
+    ax4.set_title('Processed MagnaProbe GPS Elevation Precision')
+    ax3 = [fig.add_subplot(gs[3:5, i]) for i in range(3)]  # Create three subplots in the last row, each taking one cell of a three-column layout
+    labels = ["Fix", "Float", "Single"]
+    groups = outDF.groupby('Q')
+    for i, (ID, group) in enumerate(groups):
+        sns.boxplot(y=3*group['sdu(m)'].abs(), ax=ax3[i])
+        ax3[i].set_xlabel(labels[i])
+        ax3[i].set_ylim(3*group['sdu(m)'].abs().min()*0.85, 3*group['sdu(m)'].abs().max()*1.15)
+        if i == 0:
+            ax3[i].set_ylabel('3*SDU or Elevation Uncertainty (m)')
+        else:
+            ax3[i].set_ylabel('')
+        ax3[i].text(0.1, 0.95, f"N= {len(group)}", transform=ax3[i].transAxes, size=10, weight='bold')
+        ax3[i].text(0.1, 0.9, f"Mean= {3*round(group['sdu(m)'].abs().mean(), 2)} m", transform=ax3[i].transAxes, size=10, weight='bold')
+    
+    plt.tight_layout()
+    plt.show()
+
+
+def xyComp(plotTitle, outDF):
+    # Convert latitude and longitude to decimal degrees
+    outDF['Lat'] = outDF.apply(lambda row: dms_to_dd(row['ggailatitude'], row['ggan_s_ind']), axis=1)
+    outDF['Lon'] = outDF.apply(lambda row: dms_to_dd(row['ggalongitude'], row['ggae_w_ind']), axis=1)
+    # Apply the geodesic function to each row to calculate 'Diff(m)'
+    outDF['xyDiff(m)'] = outDF.apply(lambda row: calculate_distance_geodesic(row['Lat'], row['Lon'], row['latitude(deg)'], row['longitude(deg)']), axis=1)
+    
+    # Create the figure layout
+    fig = plt.figure(figsize=(10, 12))
+    gs = gridspec.GridSpec(5, 3, figure=fig)  # Four rows, three column grid
+    # Main XY Comparison Plot
+    ax1 = fig.add_subplot(gs[0:2, :])
+    ax1
+    ax1.plot(outDF['Lat'], outDF['Lon'], label='GNGGA Pos', marker='o', linestyle='-', color='blue')
+    colors = {5: 'red', 2: 'yellow', 1: 'green'}
+    scatter = ax1.scatter(outDF['latitude(deg)'], outDF['longitude(deg)'], c=outDF['Q'].map(colors), label='Processed Pos', marker='x', s=100)
+    legend_elements = [
+        Line2D([0], [0], marker='x', color='g', label='Q=1', markerfacecolor='green', markersize=10),
+        Line2D([0], [0], marker='x', color='y', label='Q=2', markerfacecolor='yellow', markersize=10),
+        Line2D([0], [0], marker='x', color='r', label='Q=5', markerfacecolor='red', markersize=10),
+        Line2D([0], [0], marker='o', color='blue', label='GNGGA Pos', markerfacecolor='blue', markersize=10)
+    ]
+    ax1.legend(handles=legend_elements)
+    ax1.set_title(plotTitle + ' Original vs Processed Position')
+    ax1.set_xlabel('Latitude')
+    ax1.set_ylabel('Longitude')
+
+    # XY Differences Plot
+    ax2 = fig.add_subplot(gs[2, :])
+    ax2.plot(outDF['Lat'], outDF['xyDiff(m)'], color='red', label='XYDiff (m)')
+    ax2.set_ylabel('XYDiff (m)', color='red')
+    ax2.set_ylabel('Latitude')
+    ax2.legend(loc='upper right')
+    ax2.tick_params(axis='y', labelcolor='red')
+    ax2.set_title('Difference between GNGGA Pos and Processed Position')
+    # Annotate number of entries and mean value on ax2
+    num_entries = len(outDF)
+    mean_value = outDF['xyDiff(m)'].mean()
+    annotation_text = f'n = {num_entries},\nMean = {mean_value:.2f} m'
+    ax2.annotate(annotation_text, xy=(0.05, 0.95), xycoords='axes fraction', fontsize=10,
+                 horizontalalignment='left', verticalalignment='top', color='black')
+
+    # Location Accuracy Plot - fix the subplot indices
+    ax4 = fig.add_subplot(gs[3, :])
+    ax4.set_title('Processed MagnaProbe GPS Location Precision')
+    ax3 = [fig.add_subplot(gs[3:5, i]) for i in range(3)]  # Create three subplots in the last row, each taking one cell of a three-column layout
+    labels = ["Fix", "Float", "Single"]
+    groups = outDF.groupby('Q')
+    for i, (ID, group) in enumerate(groups):
+        sns.boxplot(y=3*group['sdne(m)'].abs(), ax=ax3[i])
+        ax3[i].set_xlabel(labels[i])
+        ax3[i].set_ylim(3*group['sdne(m)'].abs().min()*0.85, 3*group['sdne(m)'].abs().max()*1.15)
+        if i == 0:
+            ax3[i].set_ylabel('3*SDNE or Location Uncertainty (m)')
+        else:
+            ax3[i].set_ylabel('')
+        ax3[i].text(0.1, 0.95, f"N= {len(group)}", transform=ax3[i].transAxes, size=10, weight='bold')
+        ax3[i].text(0.1, 0.9, f"Mean= {3*round(group['sdne(m)'].abs().mean(), 2)} m", transform=ax3[i].transAxes, size=10, weight='bold')
+    plt.tight_layout()
+    plt.show()
+
+def dms_to_dd(dms, direction):
+    # Split the DMS into degrees and minutes
+    degrees = int(dms) // 100
+    minutes = float(dms) % 100
+    
+    # Convert to decimal degrees
+    decimal_degrees = degrees + (minutes / 60)
+    
+    # Adjust for direction
+    if direction in ['S', 'W']:  # Assume S or W should be negative
+        decimal_degrees = -decimal_degrees
+    return decimal_degrees
+
+# Function to calculate distance using geodesic method
+def calculate_distance_geodesic(lat1, lon1, lat2, lon2):
+    # Coordinates of the two points
+    point1 = (lat1, lon1)
+    point2 = (lat2, lon2)
+    
+    # Calculate distance using geodesic method
+    distance = geodesic(point1, point2).meters
+    return distance
+
+    
 if __name__ == "__main__":
     plotTitle, ppk_pos, survey_pts, outDF = process()
-    # plot(plotTitle, outDF)
-    HeightPlot(plotTitle, ppk_pos, survey_pts)
-
+    xyComp(plotTitle, outDF)
+    heightComp(plotTitle, outDF)
+    # HeightPlot(plotTitle, ppk_pos, survey_pts)
 
