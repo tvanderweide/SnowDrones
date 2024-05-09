@@ -22,14 +22,25 @@ import seaborn as sns
 from geopy.distance import geodesic
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
+import tkinter as tk
+from tkinter import filedialog
 
 
 
-def process():
-    #Define CSV, POS, and output file locations
-    survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/PlumberPoint_Shore2Tent.csv"
-    ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/GPSDATA/MagnaProbe/SEPT1050_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
-    out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/PlumberPoint_Shore2Tent_corrected2.csv'
+def process(writeFlag, plotTitle, survey_pts_csv_fn, ppk_pos_fn):
+    # Check if a file was selected
+    if survey_pts_csv_fn:
+        print("Using selected CSV File.")
+    else:
+        # Manually define CSV, POS, and output file locations
+        survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/PlumberPoint_Shore2Tent.csv"
+        print("Using hardcoded CSV File.")
+    if ppk_pos_fn:
+        print("Using selected .POS File.")
+    else:
+        ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/GPSDATA/MagnaProbe/SEPT1050_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
+        print("Using hardcoded .POS File.")
+    
     plotTitle = '2024-04-14_Utq'
     #Load the Files
     print('Loading: %s' % survey_pts_csv_fn)
@@ -66,9 +77,16 @@ def process():
     out_df = out_df.rename(columns={'Q': 'fix_quality', 'ns': 'nmbr_satellites','ggahdop':'HDOP','height(m)':'altitudeB', 'GGAstring':'GGAstringOriginal','RMCstring':'RMCstringOriginal'})
     
     ##Write out new file
-    #print("Writing out: %s" % out_csv_fn)
-    #out_df.to_csv(out_csv_fn, index=False)
-    #out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
+    if writeFlag:
+        out_csv_fn = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+        if out_csv_fn:
+            print("Writing out selected file: %s" % out_csv_fn)
+        else:
+            # Hardcode the output location
+            out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/PlumberPoint_Shore2Tent_corrected2.csv'
+            print("Writing out hardcoded file: %s" % out_csv_fn)
+        out_df.to_csv(out_csv_fn, index=False)
+        # out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
     return plotTitle, ppk_pos, survey_pts, outDF
 
 
@@ -215,9 +233,9 @@ def xyComp(plotTitle, outDF):
     colors = {5: 'red', 2: 'yellow', 1: 'green'}
     scatter = ax1.scatter(outDF['latitude(deg)'], outDF['longitude(deg)'], c=outDF['Q'].map(colors), label='Processed Pos', marker='x', s=100)
     legend_elements = [
-        Line2D([0], [0], marker='x', color='g', label='Q=1', markerfacecolor='green', markersize=10),
-        Line2D([0], [0], marker='x', color='y', label='Q=2', markerfacecolor='yellow', markersize=10),
-        Line2D([0], [0], marker='x', color='r', label='Q=5', markerfacecolor='red', markersize=10),
+        Line2D([0], [0], marker='x', color='g', label='GPS FIX', markerfacecolor='green', markersize=10),
+        Line2D([0], [0], marker='x', color='y', label='GPS FLOAT', markerfacecolor='yellow', markersize=10),
+        Line2D([0], [0], marker='x', color='r', label='GPS SINGLE', markerfacecolor='red', markersize=10),
         Line2D([0], [0], marker='o', color='blue', label='GNGGA Pos', markerfacecolor='blue', markersize=10)
     ]
     ax1.legend(handles=legend_elements)
@@ -284,7 +302,19 @@ def calculate_distance_geodesic(lat1, lon1, lat2, lon2):
 
     
 if __name__ == "__main__":
-    plotTitle, ppk_pos, survey_pts, outDF = process()
+    # Create a Tkinter root window
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    # Prompt the user to select a file
+    survey_pts_csv_fn = filedialog.askopenfilename(title="Select survey points CSV file", filetypes=[("CSV files", "*.csv")])
+    ppk_pos_fn = filedialog.askopenfilename(title="Select rover .POS file", filetypes=[("POS files", "*.pos")])
+    
+    # Let user decided if they want to write the corrected magnaProbe file
+    writeFlag = 0
+    # Figure title ID
+    plotTitle = '2024-04-14_Utq'
+    
+    plotTitle, ppk_pos, survey_pts, outDF = process(writeFlag, plotTitle, survey_pts_csv_fn, ppk_pos_fn)
     xyComp(plotTitle, outDF)
     heightComp(plotTitle, outDF)
     # HeightPlot(plotTitle, ppk_pos, survey_pts)

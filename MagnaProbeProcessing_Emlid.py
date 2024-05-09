@@ -7,12 +7,16 @@ Inputs:
     
     
 Notes:
-    User only needs to change input files on lines 27-29 and uncomment line 69 to write the corrected csv file
-    If it seems off it could be due to the time-offset (line 41) between MagnaProbe Timestamp and GPST
+    User should manually change the writeFlag and plotTitle variables on line 342 and 343
+    User can select the CSV and POS files with the prompt or hardcode input files on lines 42 and 47
+    If it seems off it could be due to the time-offset (line 61) between MagnaProbe Timestamp and GPST
+    
+    If the user doesn't have the geopy package installed they can use the haversine function to calculate the distance between points by uncommenting line 240
+    
     
 @author: Thomas Van Der Weide
 Boise State University
-4/29/2024
+5/9/2024
 """
 
 #! /usr/bin/env python
@@ -25,14 +29,24 @@ import seaborn as sns
 from geopy.distance import geodesic
 import matplotlib.gridspec as gridspec
 from matplotlib.lines import Line2D
+import tkinter as tk
+from tkinter import filedialog
 
 
-def process():
-    #Define CSV, POS, and output file locations
-    survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/2024-04-14_MagnaProbe_UAF.csv"
-    ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/GPSDATA/reachM2_SDP_raw_202404142145_UBX/reachM2_SDP_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
-    out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/2024-04-14_MagnaProbe_UAF_corrected.csv'
-    plotTitle = '2024-04-14_Utq'
+def process(writeFlag, plotTitle, survey_pts_csv_fn, ppk_pos_fn):
+    # Check if a file was selected
+    if survey_pts_csv_fn:
+        print("Using selected CSV File.")
+    else:
+        # Manually define CSV, POS, and output file locations
+        survey_pts_csv_fn =  "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/2024-04-14_MagnaProbe_UAF.csv"
+        print("Using hardcoded CSV File.")
+    if ppk_pos_fn:
+        print("Using selected .POS File.")
+    else:
+        ppk_pos_fn = "P:/SnowDrones/Surveys/2024/2024-04-14_Utq/GPSDATA/reachM2_SDP_raw_202404142145_UBX/reachM2_SDP_Emlid_OPUS_Forward_35_GloON_15Deg.pos"
+        print("Using hardcoded .POS File.")
+    
     #Load the Files
     print('Loading: %s' % survey_pts_csv_fn)
     survey_pts = pd.read_csv(survey_pts_csv_fn, header = 0)
@@ -70,9 +84,16 @@ def process():
     out_df = out_df.rename(columns={'Q': 'fix_quality', 'ns': 'nmbr_satellites','height(m)':'altitudeB'})
 
     ##Write out new file
-    # print("Writing out: %s" % out_csv_fn)
-    # out_df.to_csv(out_csv_fn, index=False)
-    # out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
+    if writeFlag:
+        out_csv_fn = filedialog.asksaveasfilename(defaultextension=".csv", filetypes=[("CSV files", "*.csv")])
+        if out_csv_fn:
+            print("Writing out selected file: %s" % out_csv_fn)
+        else:
+            # Hardcode the output location
+            out_csv_fn = 'P:/SnowDrones/Surveys/2024/2024-04-14_Utq/MagnaProbe/2024-04-14_MagnaProbe_UAF_corrected.csv'
+            print("Writing out hardcoded file: %s" % out_csv_fn)
+        out_df.to_csv(out_csv_fn, index=False)
+        # out_df.to_feather(out_csv_fn.split(".")[0]+".feather")
     return plotTitle, ppk_pos, survey_pts, outDF
 
 
@@ -216,7 +237,8 @@ def xyComp(plotTitle, outDF):
     outDF['Lon'] = outDF.apply(lambda row: dms_to_dd(row['ggalongitude'], row['ggae_w_ind']), axis=1)
     # Apply the geodesic function to each row to calculate 'Diff(m)'
     outDF['xyDiff(m)'] = outDF.apply(lambda row: calculate_distance_geodesic(row['Lat'], row['Lon'], row['latitude(deg)'], row['longitude(deg)']), axis=1)
-    
+    # outDF['xyDiff(m)'] = outDF.apply(lambda row: haversine(row['Lon'], row['Lat'], row['longitude(deg)'], row['latitude(deg)']), axis=1)
+
     # Create the figure layout
     fig = plt.figure(figsize=(10, 12))
     gs = gridspec.GridSpec(5, 3, figure=fig)  # Four rows, three column grid
@@ -227,9 +249,9 @@ def xyComp(plotTitle, outDF):
     colors = {5: 'red', 2: 'yellow', 1: 'green'}
     scatter = ax1.scatter(outDF['latitude(deg)'], outDF['longitude(deg)'], c=outDF['Q'].map(colors), label='Processed Pos', marker='x', s=100)
     legend_elements = [
-        Line2D([0], [0], marker='x', color='g', label='Q=1', markerfacecolor='green', markersize=10),
-        Line2D([0], [0], marker='x', color='y', label='Q=2', markerfacecolor='yellow', markersize=10),
-        Line2D([0], [0], marker='x', color='r', label='Q=5', markerfacecolor='red', markersize=10),
+        Line2D([0], [0], marker='x', color='g', label='GPS FIX', markerfacecolor='green', markersize=10),
+        Line2D([0], [0], marker='x', color='y', label='GPS FLOAT', markerfacecolor='yellow', markersize=10),
+        Line2D([0], [0], marker='x', color='r', label='GPS SINGLE', markerfacecolor='red', markersize=10),
         Line2D([0], [0], marker='o', color='blue', label='GNGGA Pos', markerfacecolor='blue', markersize=10)
     ]
     ax1.legend(handles=legend_elements)
@@ -294,11 +316,35 @@ def calculate_distance_geodesic(lat1, lon1, lat2, lon2):
     distance = geodesic(point1, point2).meters
     return distance
 
+# Haversine formula to calculate the distance between two lat-lon points
+def haversine(lon1, lat1, lon2, lat2):
+    # Convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(np.radians, [lon1, lat1, lon2, lat2])
+    
+    # Haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = np.sin(dlat/2.0)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2.0)**2
+    c = 2 * np.arcsin(np.sqrt(a))
+    r = 6371000  # Radius of Earth in meters
+    return c * r
+
     
 if __name__ == "__main__":
-    plotTitle, ppk_pos, survey_pts, outDF = process()
-    # xyComp(plotTitle, outDF)
-    # heightComp(plotTitle, outDF)
-    HeightPlot(plotTitle, ppk_pos, survey_pts)
+    # Create a Tkinter root window
+    root = tk.Tk()
+    root.withdraw()  # Hide the root window
+    # Prompt the user to select a file
+    survey_pts_csv_fn = filedialog.askopenfilename(title="Select survey points CSV file", filetypes=[("CSV files", "*.csv")])
+    ppk_pos_fn = filedialog.askopenfilename(title="Select rover .POS file", filetypes=[("POS files", "*.pos")])
+    
+    # Let user decided if they want to write the corrected magnaProbe file
+    writeFlag = 0
+    plotTitle = '2024-04-14_Utq'
+    
+    plotTitle, ppk_pos, survey_pts, outDF = process(writeFlag, plotTitle, survey_pts_csv_fn, ppk_pos_fn)
+    xyComp(plotTitle, outDF)
+    heightComp(plotTitle, outDF)
+    # HeightPlot(plotTitle, ppk_pos, survey_pts)
     
     
